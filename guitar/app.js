@@ -229,11 +229,15 @@ function computeLayout(W, H, imgNatW, imgNatH, strumHalfWidth = 0.07) {
   const diagH = diagW * 1.3;
   const diagX = imgX + imgW * 0.02;
   const diagY = Math.max(8, imgY - diagH - 16);
+  const patX = diagX;
+  const patY = diagY + diagH + 8;
+  const patW = Math.max(diagW, 160);
 
   return {
     imgX, imgY, imgW, imgH, scale,
     stringYs, bodyLeft, bodyRight,
     fretXs,
+    patX, patY, patW,
     diagX, diagY, diagW, diagH,
   };
 }
@@ -354,6 +358,68 @@ function drawNeckDots(ctx, pos, layout) {
 
 // ── Strum overlay (body area) ───────────────────────────────
 
+function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
+  const pat = STRUM_PATTERNS[patternName];
+  if (!pat) return;
+  const slots = pat.slots;
+  const n = slots.length;
+  const slotW = w / n;
+  const fontSize = Math.max(10, Math.min(14, slotW * 0.7));
+  const arrowSize = fontSize * 1.1;
+
+  ctx.save();
+  ctx.font = `600 ${Math.round(fontSize * 0.65)}px Inter, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  for (let i = 0; i < n; i++) {
+    const cx = x + i * slotW + slotW / 2;
+    const beatVal = i * 0.5;
+    const isActive = beatInChord >= 0 && beatInChord >= beatVal && beatInChord < beatVal + 0.5;
+    const slot = slots[i];
+
+    if (i % 2 === 0) {
+      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.7)' : 'rgba(255,255,255,0.25)';
+      ctx.fillText(`${i / 2 + 1}`, cx, y);
+    } else {
+      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.15)';
+      ctx.fillText('&', cx, y);
+    }
+
+    const ay = y + fontSize + 4;
+    if (slot === 'D') {
+      ctx.fillStyle = isActive ? '#00d4ff' : 'rgba(255,255,255,0.55)';
+      ctx.beginPath();
+      ctx.moveTo(cx, ay);
+      ctx.lineTo(cx - arrowSize * 0.35, ay);
+      ctx.lineTo(cx, ay + arrowSize * 0.7);
+      ctx.lineTo(cx + arrowSize * 0.35, ay);
+      ctx.closePath();
+      ctx.fill();
+    } else if (slot === 'U') {
+      ctx.fillStyle = isActive ? '#00ff88' : 'rgba(255,255,255,0.45)';
+      ctx.beginPath();
+      ctx.moveTo(cx, ay + arrowSize * 0.7);
+      ctx.lineTo(cx - arrowSize * 0.35, ay + arrowSize * 0.7);
+      ctx.lineTo(cx, ay);
+      ctx.lineTo(cx + arrowSize * 0.35, ay + arrowSize * 0.7);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.1)';
+      ctx.fillRect(cx - 1, ay + arrowSize * 0.25, 2, arrowSize * 0.2);
+    }
+  }
+
+  ctx.font = `500 ${Math.round(fontSize * 0.55)}px Inter, sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(pat.label, x, y + fontSize + arrowSize + 8);
+
+  ctx.restore();
+}
+
 function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
   const { stringYs, bodyLeft, bodyRight } = layout;
   const now = performance.now();
@@ -453,35 +519,84 @@ class ProgressionTimer {
 // ── Strum patterns ──────────────────────────────────────────
 
 const STRUM_PATTERNS = {
-  simple: [
-    { beat: 0, dir: 'down' },
-    { beat: 1, dir: 'down' },
-    { beat: 2, dir: 'down' },
-    { beat: 3, dir: 'down' },
-  ],
-  realistic: [
-    { beat: 0,   dir: 'down' },
-    { beat: 1,   dir: 'down' },
-    { beat: 1.5, dir: 'up'   },
-    { beat: 2.5, dir: 'up'   },
-    { beat: 3,   dir: 'down' },
-    { beat: 3.5, dir: 'up'   },
-  ],
+  simple: {
+    label: 'Simple',
+    slots: ['D', '-', 'D', '-', 'D', '-', 'D', '-'],
+    strums: [
+      { beat: 0, dir: 'down' },
+      { beat: 1, dir: 'down' },
+      { beat: 2, dir: 'down' },
+      { beat: 3, dir: 'down' },
+    ],
+  },
+  ballad: {
+    label: 'Ballad',
+    slots: ['D', '-', 'D', 'U', '-', '-', '-', '-'],
+    strums: [
+      { beat: 0, dir: 'down' },
+      { beat: 1, dir: 'down' },
+      { beat: 1.5, dir: 'up' },
+    ],
+  },
+  pop: {
+    label: 'Pop',
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  rock: {
+    label: 'Rock',
+    slots: ['D', '-', 'D', '-', '-', 'U', 'D', '-'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+    ],
+  },
+  reggae: {
+    label: 'Reggae',
+    slots: ['-', 'U', '-', 'U', '-', 'U', '-', 'U'],
+    strums: [
+      { beat: 0.5, dir: 'up' },
+      { beat: 1.5, dir: 'up' },
+      { beat: 2.5, dir: 'up' },
+      { beat: 3.5, dir: 'up' },
+    ],
+  },
 };
+
+const PATTERN_NAMES = Object.keys(STRUM_PATTERNS);
+
+function inferPattern(bpm) {
+  if (bpm < 70) return 'ballad';
+  if (bpm <= 130) return 'pop';
+  return 'rock';
+}
 
 // ── AutoPlayer ──────────────────────────────────────────────
 
 class AutoPlayer {
   constructor(onStrum) {
     this.onStrum = onStrum;
-    this.pattern = STRUM_PATTERNS.realistic;
+    this.patternName = 'pop';
     this.active = false;
     this.lastBeat = -1;
     this.lastChordIdx = -1;
   }
 
   setPattern(name) {
-    this.pattern = STRUM_PATTERNS[name] || STRUM_PATTERNS.simple;
+    this.patternName = STRUM_PATTERNS[name] ? name : 'simple';
+  }
+
+  getPattern() {
+    return STRUM_PATTERNS[this.patternName] || STRUM_PATTERNS.simple;
   }
 
   start() {
@@ -502,7 +617,7 @@ class AutoPlayer {
       this.lastChordIdx = chordIdx;
     }
 
-    for (const s of this.pattern) {
+    for (const s of this.getPattern().strums) {
       if (beatInChord >= s.beat && this.lastBeat < s.beat) {
         this.onStrum(s.dir);
       }
@@ -553,6 +668,7 @@ class App {
 
     this.guitarColor = localStorage.getItem('air-guitar-color') || 'original';
     this.coloredGuitar = null;
+    this.activePatternName = 'pop';
 
     this.init();
   }
@@ -598,9 +714,7 @@ class App {
 
     document.getElementById('play-btn').addEventListener('click', () => this.togglePlay());
     document.getElementById('auto-btn').addEventListener('click', () => this.toggleAuto());
-    document.getElementById('pattern-select').addEventListener('change', (e) => {
-      this.autoPlayer.setPattern(e.target.value);
-    });
+    document.getElementById('pattern-label').addEventListener('click', () => this.cyclePattern());
     document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
     document.getElementById('upstrum-btn').addEventListener('click', () => {
       this.upStrumEnabled = !this.upStrumEnabled;
@@ -662,8 +776,31 @@ class App {
       }
     }
 
+    const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
+    const patName = overrides[song.id] || song.pattern || inferPattern(song.bpm || 120);
+    this.setActivePattern(patName);
+
     this.setChord(song.progression[0].chord);
     this.updateProgressionDisplay(-1);
+  }
+
+  setActivePattern(name) {
+    const resolved = STRUM_PATTERNS[name] ? name : 'pop';
+    this.autoPlayer.setPattern(resolved);
+    this.activePatternName = resolved;
+    const label = document.getElementById('pattern-label');
+    if (label) label.textContent = STRUM_PATTERNS[resolved].label;
+  }
+
+  cyclePattern() {
+    const idx = PATTERN_NAMES.indexOf(this.activePatternName);
+    const next = PATTERN_NAMES[(idx + 1) % PATTERN_NAMES.length];
+    this.setActivePattern(next);
+    if (this.currentSong) {
+      const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
+      overrides[this.currentSong.id] = next;
+      localStorage.setItem('air-guitar-pattern-overrides', JSON.stringify(overrides));
+    }
   }
 
   async fetchSongsterrChords(song) {
@@ -1164,6 +1301,9 @@ class App {
         L.diagW, L.diagH
       );
     }
+
+    const beat = this.playing ? this.timer.beatInChord : -1;
+    drawStrumPattern(c, this.activePatternName, beat, L.patX, L.patY, L.patW);
 
     let cursor = null;
 

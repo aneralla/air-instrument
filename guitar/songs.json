@@ -4,6 +4,7 @@
     "title": "Let It Be",
     "artist": "The Beatles",
     "bpm": 72,
+    "pattern": "ballad",
     "progression": [
       {"chord": "C", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -16,6 +17,7 @@
     "title": "Knockin' on Heaven's Door",
     "artist": "Bob Dylan",
     "bpm": 68,
+    "pattern": "ballad",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "D", "beats": 4},
@@ -30,6 +32,7 @@
     "title": "A Horse With No Name",
     "artist": "America",
     "bpm": 120,
+    "pattern": "pop",
     "progression": [
       {"chord": "Em", "beats": 8},
       {"chord": "D", "beats": 8}
@@ -40,6 +43,7 @@
     "title": "Love Me Do",
     "artist": "The Beatles",
     "bpm": 148,
+    "pattern": "rock",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -52,6 +56,7 @@
     "title": "Stand By Me",
     "artist": "Ben E. King",
     "bpm": 120,
+    "pattern": "pop",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -64,6 +69,7 @@
     "title": "Riptide",
     "artist": "Vance Joy",
     "bpm": 102,
+    "pattern": "pop",
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -76,6 +82,7 @@
     "title": "Three Little Birds",
     "artist": "Bob Marley",
     "bpm": 74,
+    "pattern": "reggae",
     "progression": [
       {"chord": "A", "beats": 4},
       {"chord": "A", "beats": 4},
@@ -90,6 +97,7 @@
     "title": "Happy Birthday",
     "artist": "Traditional",
     "bpm": 100,
+    "pattern": "simple",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -104,6 +112,7 @@
     "title": "Take Me Home, Country Roads",
     "artist": "John Denver",
     "bpm": 82,
+    "pattern": "pop",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -116,6 +125,7 @@
     "title": "Sweet Home Alabama",
     "artist": "Lynyrd Skynyrd",
     "bpm": 98,
+    "pattern": "rock",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -128,6 +138,7 @@
     "title": "Hallelujah",
     "artist": "Leonard Cohen",
     "bpm": 56,
+    "pattern": "ballad",
     "progression": [
       {"chord": "C", "beats": 4},
       {"chord": "Am", "beats": 4},
@@ -144,6 +155,7 @@
     "title": "Brown Eyed Girl",
     "artist": "Van Morrison",
     "bpm": 148,
+    "pattern": "rock",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -156,6 +168,7 @@
     "title": "Wish You Were Here",
     "artist": "Pink Floyd",
     "bpm": 62,
+    "pattern": "ballad",
     "progression": [
       {"chord": "Em", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -172,6 +185,7 @@
     "title": "Bad Moon Rising",
     "artist": "Creedence Clearwater Revival",
     "bpm": 176,
+    "pattern": "rock",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "A", "beats": 2},
@@ -184,6 +198,7 @@
     "title": "Twist and Shout",
     "artist": "The Beatles",
     "bpm": 128,
+    "pattern": "rock",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -196,6 +211,7 @@
     "title": "Hotel California",
     "artist": "Eagles",
     "bpm": 74,
+    "pattern": "pop",
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "E", "beats": 4},
