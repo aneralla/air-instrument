@@ -66,23 +66,26 @@ body {
 .bar-primary {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 16px;
+  min-height: 40px;
 }
 
 #top-bar h1 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
   white-space: nowrap;
-  color: var(--dim);
+  color: var(--text);
+  flex-shrink: 0;
 }
 
 /* Search */
 .song-search-wrap {
   position: relative;
   flex: 1;
-  max-width: 380px;
+  min-width: 160px;
+  max-width: 320px;
 }
 
 #song-search {
@@ -139,14 +142,14 @@ body {
 /* Playback group */
 .playback-group {
   display: flex;
-  gap: 0;
+  flex-shrink: 0;
 }
 
 #play-btn, #auto-btn {
   background: var(--accent);
   color: #000;
   border: none;
-  padding: 6px 16px;
+  padding: 6px 14px;
   font-size: 11px;
   font-weight: 600;
   font-family: inherit;
@@ -168,27 +171,29 @@ body {
 .transport {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-left: auto;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255,255,255,0.08);
 }
 
 #chord-name {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--accent);
-  min-width: 48px;
+  min-width: 36px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 #beat-dots {
   display: flex;
-  gap: 4px;
+  gap: 3px;
 }
 
 #beat-dots .dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: rgba(255,255,255,0.12);
   transition: background 0.1s;
@@ -210,6 +215,7 @@ body {
   justify-content: center;
   transition: color 0.15s, transform 0.2s;
   flex-shrink: 0;
+  margin-left: auto;
 }
 #settings-toggle:hover { color: var(--text); }
 #settings-toggle.collapsed svg { transform: rotate(-90deg); }
@@ -219,11 +225,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 6px 16px;
+  gap: 6px;
+  padding: 5px 16px;
   border-top: 1px solid rgba(255,255,255,0.04);
   transition: max-height 0.2s ease, opacity 0.2s ease, padding 0.2s ease;
-  max-height: 50px;
+  max-height: 44px;
   opacity: 1;
   overflow: hidden;
 }
@@ -239,34 +245,36 @@ body {
   background: rgba(255,255,255,0.06);
   color: var(--dim);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 5px;
-  padding: 4px 12px;
+  border-radius: 4px;
+  padding: 3px 10px;
   font-size: 10px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
 }
 #settings-row button:hover { color: var(--text); border-color: var(--accent); }
 
-#pattern-label { min-width: 52px; text-align: center; }
+#pattern-label { min-width: 48px; text-align: center; }
 #upstrum-btn.active { background: var(--green); color: #000; border-color: var(--green); font-weight: 600; }
 #calibrate-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
 
 /* Inline color swatches in settings row */
 #color-swatches-inline {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
 }
 
 .color-swatch {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s;
+  padding: 0;
 }
 .color-swatch:hover { transform: scale(1.2); }
 .color-swatch.active { border-color: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.3); }
@@ -710,9 +718,9 @@ body {
   .bar-primary { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
   .song-search-wrap { order: 3; flex-basis: 100%; max-width: none; }
   .playback-group { order: 2; }
-  .transport { order: 1; margin-left: 0; }
-  #settings-toggle { order: 4; }
-  #settings-row { flex-wrap: wrap; }
+  .transport { order: 4; }
+  #settings-toggle { order: 5; }
+  #settings-row { flex-wrap: wrap; gap: 4px; }
   #camera-pip { width: 120px; height: 90px; top: 8px; right: 8px; }
   .ob-card { padding: 24px 20px 20px; }
   .ob-calibrate-area { width: 100%; height: 280px; }
