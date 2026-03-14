@@ -514,6 +514,15 @@ class ProgressionTimer {
   currentChord() { return this.progression[this.idx]; }
   currentBeat() { return Math.floor(this.beatInChord); }
   currentBeatsTotal() { return this.progression[this.idx]?.beats || 4; }
+
+  progress() {
+    if (!this.running || !this.progression.length) return 0;
+    const elapsed = (performance.now() - this.startTime) / 1000;
+    const beatDur = 60 / this.bpm;
+    const totalBeats = this.progression.reduce((s, c) => s + c.beats, 0);
+    const totalBeat = elapsed / beatDur;
+    return (totalBeat % totalBeats) / totalBeats;
+  }
 }
 
 // ── Strum patterns ──────────────────────────────────────────
@@ -715,7 +724,9 @@ class App {
     document.getElementById('play-btn').addEventListener('click', () => this.togglePlay());
     document.getElementById('auto-btn').addEventListener('click', () => this.toggleAuto());
     document.getElementById('pattern-label').addEventListener('click', () => this.cyclePattern());
-    document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
+    const calBtn = document.getElementById('calibrate-btn');
+    calBtn.classList.add('needs-attention');
+    calBtn.addEventListener('click', () => this.startCalibration());
     document.getElementById('upstrum-btn').addEventListener('click', () => {
       this.upStrumEnabled = !this.upStrumEnabled;
       const btn = document.getElementById('upstrum-btn');
@@ -729,7 +740,7 @@ class App {
     document.querySelectorAll('.color-swatch').forEach((s) => {
       s.addEventListener('click', () => this.setGuitarColor(s.dataset.color));
     });
-    // no toggle needed — swatches are always visible
+
 
     this.setGuitarColor(this.guitarColor);
 
@@ -1021,6 +1032,11 @@ class App {
       btn.classList.remove('active');
       if (this.autoMode) this.toggleAuto();
     } else {
+      if (!this.currentSong) return;
+      if (!this.calibrated) {
+        this.promptCalibration();
+        return;
+      }
       this.playing = true;
       this.audio.start();
       this.timer.start(this.currentSong.progression, this.currentSong.bpm);
@@ -1038,12 +1054,24 @@ class App {
       btn.textContent = 'Auto';
       btn.classList.remove('active');
     } else {
+      if (!this.currentSong) return;
+      if (!this.calibrated) {
+        this.promptCalibration();
+        return;
+      }
       this.autoMode = true;
       this.autoPlayer.start();
       btn.textContent = 'Auto Off';
       btn.classList.add('active');
       if (!this.playing) this.togglePlay();
     }
+  }
+
+  promptCalibration() {
+    const btn = document.getElementById('calibrate-btn');
+    btn.classList.add('needs-attention');
+    btn.style.transform = 'scale(1.15)';
+    setTimeout(() => { btn.style.transform = ''; }, 400);
   }
 
   startCalibration() {
@@ -1116,15 +1144,20 @@ class App {
       ctx.fillText('Bottom', 8, pxY + 4);
 
       document.getElementById('calibrate-hint').textContent = 'Calibrated! Closing...';
+      this.calibrated = true;
       setTimeout(() => this.finishCalibration(), 600);
     }
   }
 
   finishCalibration() {
     document.getElementById('calibrate-overlay').classList.add('hidden');
-    document.getElementById('calibrate-btn').classList.remove('active');
+    const btn = document.getElementById('calibrate-btn');
+    btn.classList.remove('active', 'needs-attention');
     this.calibrating = false;
     this.calibrateStep = 0;
+    if (this.calibrated) {
+      document.getElementById('camera-pip').classList.add('pip-hidden');
+    }
   }
 
   triggerAutoStrum(direction) {
