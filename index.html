@@ -55,6 +55,59 @@
       <div id="bottom-bar">
         <div id="progression"></div>
       </div>
+
+      <div id="onboarding" class="hidden">
+        <div class="ob-card" data-step="0">
+          <h2>Welcome to Air Guitar</h2>
+          <p>Play guitar with your webcam. We'll walk you through setup in 30 seconds.</p>
+          <button class="ob-primary" data-action="next">Get Started</button>
+          <button class="ob-skip" data-action="skip">Skip</button>
+        </div>
+
+        <div class="ob-card" data-step="1">
+          <h2>Camera Access</h2>
+          <p>We use your camera to track your hand movement. Your camera feed is shown below.</p>
+          <div class="ob-camera-preview">
+            <video id="ob-camera-preview" autoplay playsinline muted></video>
+          </div>
+          <p class="ob-small">Camera is ready!</p>
+          <button class="ob-primary" data-action="next">Next</button>
+          <button class="ob-skip" data-action="skip">Skip</button>
+        </div>
+
+        <div class="ob-card ob-card-wide" data-step="2">
+          <h2>Set Your Strum Area</h2>
+          <p>Click the <strong>top</strong> of where you'll strum, then click the <strong>bottom</strong>. This maps your hand movement to the guitar strings.</p>
+          <div class="ob-calibrate-area">
+            <video id="ob-cal-video" autoplay playsinline muted></video>
+            <canvas id="ob-cal-canvas"></canvas>
+            <div id="ob-cal-hint">Click the TOP of your strum area</div>
+          </div>
+          <button class="ob-primary" data-action="next" disabled>Next</button>
+          <button class="ob-skip" data-action="skip">Skip</button>
+        </div>
+
+        <div class="ob-card" data-step="3">
+          <h2>How to Play</h2>
+          <ul class="ob-tips">
+            <li>Pick a song from the dropdown at the top</li>
+            <li>Click <strong>Play</strong> &mdash; chords advance automatically</li>
+            <li>Sweep your hand down across the strum area to play</li>
+            <li>Enable <strong>Up Strum</strong> to also play when sweeping back up</li>
+            <li>Click <strong>Auto</strong> to hear the song play itself</li>
+          </ul>
+          <button class="ob-primary" data-action="next">Next</button>
+          <button class="ob-skip" data-action="skip">Skip</button>
+        </div>
+
+        <div class="ob-card" data-step="4">
+          <h2>You're Ready!</h2>
+          <p>Start playing. You can recalibrate anytime with the <strong>Set Strum</strong> button in the top bar.</p>
+          <button class="ob-primary" data-action="done">Start Playing</button>
+        </div>
+
+        <div class="ob-dots" id="ob-dots"></div>
+      </div>
     </div>
   </div>
   <script type="module" src="app.js"></script>

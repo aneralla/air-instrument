@@ -572,6 +572,11 @@ class App {
 
     if (this.songs.length) this.selectSong(this.songs[0]);
     this.loop();
+
+    this.onboarding = new Onboarding(this);
+    if (this.onboarding.shouldShow()) {
+      this.onboarding.start();
+    }
   }
 
   resize() {
@@ -921,6 +926,177 @@ class App {
     }
 
     drawStrumOverlay(c, L, this.stringStates, this.mutedStrings, cursor);
+  }
+}
+
+// ── Onboarding ──────────────────────────────────────────────
+
+class Onboarding {
+  constructor(app) {
+    this.app = app;
+    this.step = 0;
+    this.totalSteps = 5;
+    this.overlay = document.getElementById('onboarding');
+    this.cards = this.overlay.querySelectorAll('.ob-card');
+    this.dotsContainer = document.getElementById('ob-dots');
+    this.calStep = 0;
+
+    this.buildDots();
+    this.bindButtons();
+    this.bindCalibration();
+  }
+
+  shouldShow() {
+    return !localStorage.getItem('air-guitar-onboarded');
+  }
+
+  start() {
+    this.step = 0;
+    this.overlay.classList.remove('hidden');
+    this.showStep(0);
+  }
+
+  buildDots() {
+    this.dotsContainer.innerHTML = '';
+    for (let i = 0; i < this.totalSteps; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'ob-dot';
+      this.dotsContainer.appendChild(dot);
+    }
+  }
+
+  updateDots() {
+    const dots = this.dotsContainer.querySelectorAll('.ob-dot');
+    dots.forEach((d, i) => {
+      d.classList.toggle('active', i === this.step);
+      d.classList.toggle('done', i < this.step);
+    });
+  }
+
+  showStep(idx) {
+    this.step = idx;
+    this.cards.forEach((c) => c.classList.remove('active'));
+    const card = this.cards[idx];
+    if (card) {
+      card.classList.add('active');
+      card.style.animation = 'none';
+      card.offsetHeight;
+      card.style.animation = '';
+    }
+    this.updateDots();
+
+    if (idx === 1) this.setupCameraPreview();
+    if (idx === 2) this.setupCalibration();
+  }
+
+  bindButtons() {
+    this.overlay.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === 'next') this.next();
+      else if (action === 'skip') this.finish();
+      else if (action === 'done') this.finish();
+    });
+  }
+
+  next() {
+    if (this.step < this.totalSteps - 1) {
+      this.showStep(this.step + 1);
+    } else {
+      this.finish();
+    }
+  }
+
+  finish() {
+    this.overlay.classList.add('hidden');
+    localStorage.setItem('air-guitar-onboarded', '1');
+  }
+
+  setupCameraPreview() {
+    const video = document.getElementById('ob-camera-preview');
+    if (this.app.tracker && this.app.tracker.video.srcObject) {
+      video.srcObject = this.app.tracker.video.srcObject;
+    }
+  }
+
+  setupCalibration() {
+    const video = document.getElementById('ob-cal-video');
+    const canvas = document.getElementById('ob-cal-canvas');
+    const hint = document.getElementById('ob-cal-hint');
+
+    if (this.app.tracker && this.app.tracker.video.srcObject) {
+      video.srcObject = this.app.tracker.video.srcObject;
+    }
+
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    this.calStep = 0;
+    hint.textContent = 'Click the TOP of your strum area';
+
+    const nextBtn = this.cards[2].querySelector('[data-action="next"]');
+    nextBtn.disabled = true;
+  }
+
+  bindCalibration() {
+    const canvas = document.getElementById('ob-cal-canvas');
+    canvas.addEventListener('click', (e) => {
+      if (this.step !== 2) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const clickY = (e.clientY - rect.top) / rect.height;
+      const pxY = e.clientY - rect.top;
+      const hint = document.getElementById('ob-cal-hint');
+
+      const dpr = window.devicePixelRatio || 1;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      if (this.calStep === 0) {
+        this.app.strumCamTop = clickY;
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, pxY);
+        ctx.lineTo(rect.width, pxY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Top', 8, pxY - 4);
+        this.calStep = 1;
+        hint.textContent = 'Click the BOTTOM of your strum area';
+      } else if (this.calStep === 1) {
+        this.app.strumCamBottom = Math.max(clickY, this.app.strumCamTop + 0.05);
+        ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, pxY);
+        ctx.lineTo(rect.width, pxY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Bottom', 8, pxY + 4);
+        this.calStep = 2;
+        hint.textContent = 'Calibrated!';
+
+        const nextBtn = this.cards[2].querySelector('[data-action="next"]');
+        nextBtn.disabled = false;
+      }
+    });
   }
 }
 
