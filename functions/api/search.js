@@ -1,4 +1,4 @@
-const SONGSTERR_API = 'https://www.songsterr.com/a/ra/songs.json';
+const SONGSTERR_API = 'https://www.songsterr.com/api/songs';
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
@@ -14,11 +14,11 @@ export async function onRequestGet(context) {
 
     const data = await res.json();
     const songs = data.slice(0, 15).map((s) => ({
-      id: `songsterr-${s.id}`,
+      id: `songsterr-${s.songId}`,
       title: s.title,
-      artist: s.artist.name,
+      artist: s.artist,
       bpm: 120,
-      songsterrId: s.id,
+      songsterrId: s.songId,
       progression: [],
     }));
 
