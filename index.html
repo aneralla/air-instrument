@@ -28,10 +28,8 @@
             <option value="simple">Simple</option>
             <option value="realistic" selected>Realistic</option>
           </select>
-          <label class="strum-width-label">
-            Strum
-            <input type="range" id="strum-width" min="0.04" max="0.20" step="0.01" value="0.07">
-          </label>
+          <button id="calibrate-btn">Set Strum</button>
+          <button id="upstrum-btn">Up Strum</button>
         </div>
         <div class="transport">
           <span id="chord-name">--</span>
@@ -46,6 +44,11 @@
         <canvas id="guitar-canvas"></canvas>
         <div id="camera-pip">
           <video id="camera" autoplay playsinline muted></video>
+        </div>
+        <div id="calibrate-overlay" class="hidden">
+          <video id="calibrate-video" autoplay playsinline muted></video>
+          <canvas id="calibrate-canvas"></canvas>
+          <div id="calibrate-hint">Click the TOP of your strum area</div>
         </div>
       </div>
 

@@ -496,6 +496,12 @@ class App {
     this.autoMode = false;
     this.strumHalfWidth = 0.07;
 
+    this.strumCamTop = 0.0;
+    this.strumCamBottom = 1.0;
+    this.calibrating = false;
+    this.calibrateStep = 0;
+    this.upStrumEnabled = false;
+
     this.init();
   }
 
@@ -553,10 +559,16 @@ class App {
     document.getElementById('pattern-select').addEventListener('change', (e) => {
       this.autoPlayer.setPattern(e.target.value);
     });
-    document.getElementById('strum-width').addEventListener('input', (e) => {
-      this.strumHalfWidth = parseFloat(e.target.value);
-      this.resize();
+    document.getElementById('calibrate-btn').addEventListener('click', () => this.startCalibration());
+    document.getElementById('upstrum-btn').addEventListener('click', () => {
+      this.upStrumEnabled = !this.upStrumEnabled;
+      const btn = document.getElementById('upstrum-btn');
+      btn.classList.toggle('active', this.upStrumEnabled);
+      btn.textContent = this.upStrumEnabled ? 'Up Strum On' : 'Up Strum';
     });
+
+    const calCanvas = document.getElementById('calibrate-canvas');
+    calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
 
     if (this.songs.length) this.selectSong(this.songs[0]);
     this.loop();
@@ -630,6 +642,87 @@ class App {
     }
   }
 
+  startCalibration() {
+    const overlay = document.getElementById('calibrate-overlay');
+    const calVideo = document.getElementById('calibrate-video');
+    const calCanvas = document.getElementById('calibrate-canvas');
+    const btn = document.getElementById('calibrate-btn');
+
+    calVideo.srcObject = this.tracker.video.srcObject;
+    overlay.classList.remove('hidden');
+    btn.classList.add('active');
+
+    const rect = overlay.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    calCanvas.width = rect.width * dpr;
+    calCanvas.height = rect.height * dpr;
+    calCanvas.style.width = rect.width + 'px';
+    calCanvas.style.height = rect.height + 'px';
+    const ctx = calCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    this.calibrating = true;
+    this.calibrateStep = 0;
+    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+  }
+
+  handleCalibrationClick(e) {
+    if (!this.calibrating) return;
+
+    const canvas = document.getElementById('calibrate-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const clickY = (e.clientY - rect.top) / rect.height;
+
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pxY = e.clientY - rect.top;
+
+    if (this.calibrateStep === 0) {
+      this.strumCamTop = clickY;
+      ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, pxY);
+      ctx.lineTo(rect.width, pxY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('Top', 8, pxY - 4);
+      this.calibrateStep = 1;
+      document.getElementById('calibrate-hint').textContent = 'Click the BOTTOM of your strum area';
+    } else {
+      this.strumCamBottom = Math.max(clickY, this.strumCamTop + 0.05);
+
+      ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, pxY);
+      ctx.lineTo(rect.width, pxY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Bottom', 8, pxY + 4);
+
+      document.getElementById('calibrate-hint').textContent = 'Calibrated! Closing...';
+      setTimeout(() => this.finishCalibration(), 600);
+    }
+  }
+
+  finishCalibration() {
+    document.getElementById('calibrate-overlay').classList.add('hidden');
+    document.getElementById('calibrate-btn').classList.remove('active');
+    this.calibrating = false;
+    this.calibrateStep = 0;
+  }
+
   triggerAutoStrum(direction) {
     if (!this.currentBuffers || !this.layout) return;
     const L = this.layout;
@@ -689,9 +782,10 @@ class App {
     if (!this.layout) return null;
     const L = this.layout;
 
-    // Map camera Y to the string Y range (vertical strum across horizontal strings).
-    // Map camera X (mirrored) to the body X range.
-    const rawY = L.stringYs[0] + hand.y * (L.stringYs[5] - L.stringYs[0]);
+    // Normalize hand.y through calibrated bounds, then map to string Y range.
+    const normalizedY = (hand.y - this.strumCamTop) / (this.strumCamBottom - this.strumCamTop);
+    const clampedNY = Math.max(-0.1, Math.min(1.1, normalizedY));
+    const rawY = L.stringYs[0] + clampedNY * (L.stringYs[5] - L.stringYs[0]);
     const rawX = L.bodyLeft + (1 - hand.x) * (L.bodyRight - L.bodyLeft);
     const clampedX = Math.max(L.bodyLeft, Math.min(L.bodyRight, rawX));
 
@@ -709,35 +803,54 @@ class App {
     const prev = this.handState.prevY;
     const curr = this.handState.y;
     const delta = curr - prev;
+    const speed = Math.abs(delta);
 
-    // Only trigger on DOWN-strums (hand moving downward = Y increasing).
     const isDownStrum = delta > 0.5;
+    const isUpStrum = this.upStrumEnabled && delta < -0.5;
 
-    if (isDownStrum) {
-      const speed = Math.abs(delta);
+    if (isDownStrum || isUpStrum) {
       const vel = Math.min(1, Math.max(0.25, speed / 10));
       const now = performance.now();
       const COOLDOWN = 80;
 
-      for (let s = 0; s < 6; s++) {
-        const sy = L.stringYs[s];
-        const recentlyPlayed = (now - (this.stringStates[s] || 0)) < COOLDOWN;
-        if (prev < sy && curr >= sy && !this.mutedStrings[s] && !recentlyPlayed) {
-          this.audio.playString(this.currentBuffers, s, vel);
-          this.stringStates[s] = now;
-
-          // Fast strum: schedule all remaining strings with tiny delays
-          // so a quick sweep sounds like a real chord strum.
-          if (speed > 1.5) {
-            const msPerString = Math.max(3, Math.min(18, 40 / speed));
-            for (let r = s + 1; r < 6; r++) {
-              if (!this.mutedStrings[r]) {
-                const delay = (r - s) * msPerString;
-                this.audio.playString(this.currentBuffers, r, vel * 0.97, delay);
-                this.stringStates[r] = now + delay;
+      if (isDownStrum) {
+        for (let s = 0; s < 6; s++) {
+          const sy = L.stringYs[s];
+          const recentlyPlayed = (now - (this.stringStates[s] || 0)) < COOLDOWN;
+          if (prev < sy && curr >= sy && !this.mutedStrings[s] && !recentlyPlayed) {
+            this.audio.playString(this.currentBuffers, s, vel);
+            this.stringStates[s] = now;
+            if (speed > 1.5) {
+              const msPerString = Math.max(3, Math.min(18, 40 / speed));
+              for (let r = s + 1; r < 6; r++) {
+                if (!this.mutedStrings[r]) {
+                  const delay = (r - s) * msPerString;
+                  this.audio.playString(this.currentBuffers, r, vel * 0.97, delay);
+                  this.stringStates[r] = now + delay;
+                }
               }
+              break;
             }
-            break;
+          }
+        }
+      } else {
+        for (let s = 5; s >= 0; s--) {
+          const sy = L.stringYs[s];
+          const recentlyPlayed = (now - (this.stringStates[s] || 0)) < COOLDOWN;
+          if (prev > sy && curr <= sy && !this.mutedStrings[s] && !recentlyPlayed) {
+            this.audio.playString(this.currentBuffers, s, vel * 0.85);
+            this.stringStates[s] = now;
+            if (speed > 1.5) {
+              const msPerString = Math.max(3, Math.min(18, 40 / speed));
+              for (let r = s - 1; r >= 0; r--) {
+                if (!this.mutedStrings[r]) {
+                  const delay = (s - r) * msPerString;
+                  this.audio.playString(this.currentBuffers, r, vel * 0.82, delay);
+                  this.stringStates[r] = now + delay;
+                }
+              }
+              break;
+            }
           }
         }
       }
