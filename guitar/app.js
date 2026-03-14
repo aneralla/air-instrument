@@ -725,7 +725,6 @@ class App {
     document.getElementById('auto-btn').addEventListener('click', () => this.toggleAuto());
     document.getElementById('pattern-label').addEventListener('click', () => this.cyclePattern());
     const calBtn = document.getElementById('calibrate-btn');
-    calBtn.classList.add('needs-attention');
     calBtn.addEventListener('click', () => this.startCalibration());
     document.getElementById('upstrum-btn').addEventListener('click', () => {
       this.upStrumEnabled = !this.upStrumEnabled;
@@ -738,16 +737,18 @@ class App {
     calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
 
     document.querySelectorAll('.color-swatch').forEach((s) => {
-      s.addEventListener('click', () => this.setGuitarColor(s.dataset.color));
+      s.addEventListener('click', () => {
+        this.setGuitarColor(s.dataset.color);
+        this.completeStep(1);
+      });
     });
-
 
     this.setGuitarColor(this.guitarColor);
 
     this.loadCustomSongs();
     this.setupCustomSongModal();
+    this.initStepGuide();
 
-    // don't auto-select a song — let the user pick one
     this.loop();
 
     this.onboarding = new Onboarding(this);
@@ -772,6 +773,68 @@ class App {
     }
   }
 
+  initStepGuide() {
+    this.stepsCompleted = new Set();
+    const GUIDE_KEY = 'air-guitar-guide-v2';
+    this.guideKey = GUIDE_KEY;
+    this.guideDone = localStorage.getItem(GUIDE_KEY) === 'true';
+    if (this.guideDone) {
+      document.getElementById('top-bar').classList.add('steps-done');
+    } else {
+      this.enforceStepState();
+    }
+  }
+
+  enforceStepState() {
+    const calBtn = document.getElementById('calibrate-btn');
+    const searchInput = document.getElementById('song-search');
+    const customBtn = document.getElementById('custom-song-btn');
+    const playBtn = document.getElementById('play-btn');
+    const autoBtn = document.getElementById('auto-btn');
+
+    const has = (n) => this.stepsCompleted.has(n);
+
+    calBtn.disabled = !has(1);
+    calBtn.classList.toggle('bar-btn-disabled', !has(1));
+    if (has(1) && !has(2)) {
+      calBtn.classList.add('needs-attention');
+    }
+
+    searchInput.disabled = !has(2);
+    customBtn.disabled = !has(2);
+    searchInput.classList.toggle('input-disabled', !has(2));
+
+    playBtn.disabled = !has(3);
+    autoBtn.disabled = !has(3);
+    playBtn.classList.toggle('play-disabled', !has(3));
+    autoBtn.classList.toggle('play-disabled', !has(3));
+  }
+
+  completeStep(n) {
+    if (this.guideDone) return;
+    this.stepsCompleted.add(n);
+    const label = document.querySelector(`.step-label[data-step="${n}"]`);
+    if (label) label.classList.add('step-done');
+
+    const nextStep = { 1: 2, 2: 3, 3: 5 }[n];
+    if (nextStep) {
+      const next = document.querySelector(`.step-label[data-step="${nextStep}"]`);
+      if (next && !next.classList.contains('step-done')) {
+        next.classList.add('step-active');
+      }
+    }
+
+    this.enforceStepState();
+
+    if ([1, 2, 3, 5].every((s) => this.stepsCompleted.has(s))) {
+      this.guideDone = true;
+      localStorage.setItem(this.guideKey, 'true');
+      setTimeout(() => {
+        document.getElementById('top-bar').classList.add('steps-done');
+      }, 800);
+    }
+  }
+
   async selectSong(song) {
     this.currentSong = song;
     if (this.playing) this.togglePlay();
@@ -792,6 +855,7 @@ class App {
 
     this.setChord(song.progression[0].chord);
     this.updateProgressionDisplay(-1);
+    this.completeStep(3);
   }
 
   setActivePattern(name) {
@@ -1043,16 +1107,19 @@ class App {
       this.lastTimerIdx = -1;
       btn.textContent = 'Stop';
       btn.classList.add('active');
+      this.completeStep(5);
     }
   }
 
   toggleAuto() {
     const btn = document.getElementById('auto-btn');
+    const patBtn = document.getElementById('pattern-label');
     if (this.autoMode) {
       this.autoMode = false;
       this.autoPlayer.stop();
       btn.textContent = 'Auto';
       btn.classList.remove('active');
+      patBtn.classList.add('hidden');
     } else {
       if (!this.currentSong) return;
       if (!this.calibrated) {
@@ -1063,6 +1130,7 @@ class App {
       this.autoPlayer.start();
       btn.textContent = 'Auto Off';
       btn.classList.add('active');
+      patBtn.classList.remove('hidden');
       if (!this.playing) this.togglePlay();
     }
   }
@@ -1156,7 +1224,7 @@ class App {
     this.calibrating = false;
     this.calibrateStep = 0;
     if (this.calibrated) {
-      document.getElementById('camera-pip').classList.add('pip-hidden');
+      this.completeStep(2);
     }
   }
 

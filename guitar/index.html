@@ -22,7 +22,8 @@
         <h1>Air Guitar</h1>
         <div class="bar-sep"></div>
 
-        <div class="bar-group" id="setup-group">
+        <div class="bar-group" id="color-group">
+          <span class="step-label step-active" data-step="1">Set Guitar Color</span>
           <div id="color-swatches">
             <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
             <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
@@ -30,11 +31,17 @@
             <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
             <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
           </div>
+        </div>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="strum-setup-group">
+          <span class="step-label" data-step="2">Then</span>
           <button id="calibrate-btn" class="bar-btn" title="Calibrate your physical strum area using the camera">Set Strum</button>
         </div>
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="song-group">
+          <span class="step-label" data-step="3">Pick a Song</span>
           <div class="song-search-wrap">
             <input id="song-search" type="text" placeholder="Search songs..." autocomplete="off">
             <div id="song-dropdown" class="hidden"></div>
@@ -44,13 +51,14 @@
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="strum-group">
+          <span class="step-label step-optional" data-step="4">Optional</span>
           <button id="upstrum-btn" class="bar-btn" title="Toggle up-strum detection (default: down-strum only)">Up Strum</button>
-          <button id="pattern-label" class="bar-btn" title="Click to cycle through strumming patterns">Pattern: Pop</button>
-
+          <button id="pattern-label" class="bar-btn hidden" title="Click to cycle through strumming patterns">Pattern: Pop</button>
         </div>
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="play-group">
+          <span class="step-label" data-step="5">Play!</span>
           <div class="playback-group">
             <button id="play-btn" title="Start the song — you strum along with your hand">Play</button>
             <button id="auto-btn" title="Auto-strum — the app plays the strumming pattern for you">Auto</button>
