@@ -19,36 +19,40 @@
 
     <div id="main" class="hidden">
       <div id="top-bar">
-        <h1>Air Guitar</h1>
-        <div class="controls">
-          <button id="customize-btn">Color</button>
+        <div class="bar-primary">
+          <h1>Air Guitar</h1>
           <div class="song-search-wrap">
             <input id="song-search" type="text" placeholder="Search songs..." autocomplete="off">
             <div id="song-dropdown" class="hidden"></div>
           </div>
-          <button id="play-btn">Play</button>
-          <button id="auto-btn">Auto</button>
+          <div class="playback-group">
+            <button id="play-btn">Play</button>
+            <button id="auto-btn">Auto</button>
+          </div>
+          <div class="transport">
+            <span id="chord-name">--</span>
+            <div id="beat-dots">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </div>
+          </div>
+          <button id="settings-toggle" title="Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <div id="settings-row">
           <button id="pattern-label">Pop</button>
           <button id="calibrate-btn">Set Strum</button>
           <button id="upstrum-btn">Up Strum</button>
-          <button id="custom-song-btn">+ Song</button>
-        </div>
-        <div class="transport">
-          <span id="chord-name">--</span>
-          <div id="beat-dots">
-            <span class="dot"></span><span class="dot"></span>
-            <span class="dot"></span><span class="dot"></span>
+          <button id="customize-btn">Color</button>
+          <div id="color-swatches-inline" class="hidden">
+            <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
+            <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
+            <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
+            <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
+            <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
           </div>
-        </div>
-      </div>
-
-      <div id="customize-panel" class="hidden">
-        <div class="color-swatches">
-          <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
-          <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
-          <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
-          <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
-          <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
+          <button id="custom-song-btn">+ Song</button>
         </div>
       </div>
 

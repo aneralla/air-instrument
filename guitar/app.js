@@ -730,8 +730,22 @@ class App {
       s.addEventListener('click', () => this.setGuitarColor(s.dataset.color));
     });
     document.getElementById('customize-btn').addEventListener('click', () => {
-      document.getElementById('customize-panel').classList.toggle('hidden');
+      document.getElementById('color-swatches-inline').classList.toggle('hidden');
     });
+
+    const settingsRow = document.getElementById('settings-row');
+    const settingsToggle = document.getElementById('settings-toggle');
+    const settingsCollapsed = localStorage.getItem('air-guitar-settings-collapsed') === 'true';
+    if (settingsCollapsed) {
+      settingsRow.classList.add('collapsed');
+      settingsToggle.classList.add('collapsed');
+    }
+    settingsToggle.addEventListener('click', () => {
+      const isCollapsed = settingsRow.classList.toggle('collapsed');
+      settingsToggle.classList.toggle('collapsed', isCollapsed);
+      localStorage.setItem('air-guitar-settings-collapsed', isCollapsed);
+    });
+
     this.setGuitarColor(this.guitarColor);
 
     this.loadCustomSongs();
