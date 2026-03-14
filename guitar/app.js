@@ -729,29 +729,14 @@ class App {
     document.querySelectorAll('.color-swatch').forEach((s) => {
       s.addEventListener('click', () => this.setGuitarColor(s.dataset.color));
     });
-    document.getElementById('customize-btn').addEventListener('click', () => {
-      document.getElementById('color-swatches-inline').classList.toggle('hidden');
-    });
-
-    const settingsRow = document.getElementById('settings-row');
-    const settingsToggle = document.getElementById('settings-toggle');
-    const settingsCollapsed = localStorage.getItem('air-guitar-settings-collapsed') === 'true';
-    if (settingsCollapsed) {
-      settingsRow.classList.add('collapsed');
-      settingsToggle.classList.add('collapsed');
-    }
-    settingsToggle.addEventListener('click', () => {
-      const isCollapsed = settingsRow.classList.toggle('collapsed');
-      settingsToggle.classList.toggle('collapsed', isCollapsed);
-      localStorage.setItem('air-guitar-settings-collapsed', isCollapsed);
-    });
+    // no toggle needed — swatches are always visible
 
     this.setGuitarColor(this.guitarColor);
 
     this.loadCustomSongs();
     this.setupCustomSongModal();
 
-    if (this.songs.length) this.selectSong(this.songs[0]);
+    // don't auto-select a song — let the user pick one
     this.loop();
 
     this.onboarding = new Onboarding(this);
@@ -803,7 +788,7 @@ class App {
     this.autoPlayer.setPattern(resolved);
     this.activePatternName = resolved;
     const label = document.getElementById('pattern-label');
-    if (label) label.textContent = STRUM_PATTERNS[resolved].label;
+    if (label) label.textContent = 'Pattern: ' + STRUM_PATTERNS[resolved].label;
   }
 
   cyclePattern() {
@@ -928,9 +913,7 @@ class App {
       }
     });
 
-    if (this.songs.length) {
-      input.value = `${this.songs[0].title} — ${this.songs[0].artist}`;
-    }
+    input.value = '';
   }
 
   loadCustomSongs() {

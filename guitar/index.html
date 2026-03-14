@@ -19,15 +19,40 @@
 
     <div id="main" class="hidden">
       <div id="top-bar">
-        <div class="bar-primary">
-          <h1>Air Guitar</h1>
+        <h1>Air Guitar</h1>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="setup-group">
+          <div id="color-swatches">
+            <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
+            <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
+            <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
+            <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
+            <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
+          </div>
+          <button id="calibrate-btn" class="bar-btn" title="Calibrate your physical strum area using the camera">Set Strum</button>
+        </div>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="song-group">
           <div class="song-search-wrap">
             <input id="song-search" type="text" placeholder="Search songs..." autocomplete="off">
             <div id="song-dropdown" class="hidden"></div>
           </div>
+          <button id="custom-song-btn" title="Add custom song">+</button>
+        </div>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="strum-group">
+          <button id="upstrum-btn" class="bar-btn" title="Toggle up-strum detection (default: down-strum only)">Up Strum</button>
+          <button id="pattern-label" class="bar-btn" title="Click to cycle through strumming patterns">Pattern: Pop</button>
+        </div>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="play-group">
           <div class="playback-group">
-            <button id="play-btn">Play</button>
-            <button id="auto-btn">Auto</button>
+            <button id="play-btn" title="Start the song — you strum along with your hand">Play</button>
+            <button id="auto-btn" title="Auto-strum — the app plays the strumming pattern for you">Auto</button>
           </div>
           <div class="transport">
             <span id="chord-name">--</span>
@@ -36,23 +61,6 @@
               <span class="dot"></span><span class="dot"></span>
             </div>
           </div>
-          <button id="settings-toggle" title="Settings">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-        </div>
-        <div id="settings-row">
-          <button id="pattern-label">Pop</button>
-          <button id="calibrate-btn">Set Strum</button>
-          <button id="upstrum-btn">Up Strum</button>
-          <button id="customize-btn">Color</button>
-          <div id="color-swatches-inline" class="hidden">
-            <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
-            <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
-            <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
-            <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
-            <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
-          </div>
-          <button id="custom-song-btn">+ Song</button>
         </div>
       </div>
 
