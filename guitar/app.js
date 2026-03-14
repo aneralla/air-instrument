@@ -15,6 +15,55 @@ const CAL = {
   bodyCenterX: 0.69,
 };
 
+// ── Color presets ───────────────────────────────────────────
+
+// Swatch color = exact color applied via canvas 'color' composite mode.
+const COLOR_PRESETS = {
+  original:  { label: 'Original',    color: null,      swatch: '#2a9e8f' },
+  cherry:    { label: 'Cherry Red',  color: '#cc2222', swatch: '#cc2222' },
+  sunburst:  { label: 'Sunburst',    color: '#cc8800', swatch: '#cc8800' },
+  ocean:     { label: 'Ocean Blue',  color: '#2255cc', swatch: '#2255cc' },
+  blackout:  { label: 'Blackout',    color: '#333333', swatch: '#222222' },
+};
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h * 360, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  h /= 360;
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    Math.round(hue2rgb(p, q, h) * 255),
+    Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  ];
+}
+
 // ── Chord parser ────────────────────────────────────────────
 
 function parseChordName(name) {
@@ -502,6 +551,9 @@ class App {
     this.calibrateStep = 0;
     this.upStrumEnabled = false;
 
+    this.guitarColor = localStorage.getItem('air-guitar-color') || 'original';
+    this.coloredGuitar = null;
+
     this.init();
   }
 
@@ -542,17 +594,7 @@ class App {
     this.resize();
     window.addEventListener('resize', () => this.resize());
 
-    const sel = document.getElementById('song-select');
-    for (const s of this.songs) {
-      const o = document.createElement('option');
-      o.value = s.id;
-      o.textContent = `${s.title} \u2014 ${s.artist}`;
-      sel.appendChild(o);
-    }
-    sel.addEventListener('change', () => {
-      const song = this.songs.find((s) => s.id === sel.value);
-      if (song) this.selectSong(song);
-    });
+    this.setupSongSearch();
 
     document.getElementById('play-btn').addEventListener('click', () => this.togglePlay());
     document.getElementById('auto-btn').addEventListener('click', () => this.toggleAuto());
@@ -569,6 +611,17 @@ class App {
 
     const calCanvas = document.getElementById('calibrate-canvas');
     calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
+
+    document.querySelectorAll('.color-swatch').forEach((s) => {
+      s.addEventListener('click', () => this.setGuitarColor(s.dataset.color));
+    });
+    document.getElementById('customize-btn').addEventListener('click', () => {
+      document.getElementById('customize-panel').classList.toggle('hidden');
+    });
+    this.setGuitarColor(this.guitarColor);
+
+    this.loadCustomSongs();
+    this.setupCustomSongModal();
 
     if (this.songs.length) this.selectSong(this.songs[0]);
     this.loop();
@@ -595,11 +648,35 @@ class App {
     }
   }
 
-  selectSong(song) {
+  async selectSong(song) {
     this.currentSong = song;
     if (this.playing) this.togglePlay();
+
+    if (!song.progression || !song.progression.length) {
+      if (song.songsterrId) {
+        await this.fetchSongsterrChords(song);
+      }
+      if (!song.progression || !song.progression.length) {
+        song.progression = [{ chord: 'C', beats: 4 }, { chord: 'G', beats: 4 },
+          { chord: 'Am', beats: 4 }, { chord: 'F', beats: 4 }];
+      }
+    }
+
     this.setChord(song.progression[0].chord);
     this.updateProgressionDisplay(-1);
+  }
+
+  async fetchSongsterrChords(song) {
+    try {
+      const res = await fetch(`/api/chords?songsterrId=${song.songsterrId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.chords) && data.chords.length) {
+        song.progression = data.chords.slice(0, 32).map((c) => ({
+          chord: c.name || c, beats: 4,
+        }));
+      }
+    } catch { /* fallback handled by caller */ }
   }
 
   setChord(name) {
@@ -611,6 +688,194 @@ class App {
     this.audio.start();
     this.currentBuffers = this.audio.getBuffers(name, pos);
     document.getElementById('chord-name').textContent = name;
+  }
+
+  setupSongSearch() {
+    const input = document.getElementById('song-search');
+    const dropdown = document.getElementById('song-dropdown');
+    let searchTimeout = null;
+
+    const showDropdown = (items) => {
+      dropdown.innerHTML = '';
+      if (!items.length) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+      for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'song-option';
+        div.innerHTML = `<span>${item.title}</span><span class="song-artist">${item.artist}</span>`;
+        div.addEventListener('click', () => {
+          input.value = `${item.title} — ${item.artist}`;
+          dropdown.classList.add('hidden');
+          this.selectSong(item);
+        });
+        dropdown.appendChild(div);
+      }
+      dropdown.classList.remove('hidden');
+    };
+
+    const searchLocal = (q) => {
+      const lower = q.toLowerCase();
+      return this.songs.filter(
+        (s) => s.title.toLowerCase().includes(lower) || s.artist.toLowerCase().includes(lower)
+      );
+    };
+
+    const searchAPI = async (q) => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.songs || [];
+      } catch {
+        return [];
+      }
+    };
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      if (!q) {
+        showDropdown(this.songs.slice(0, 10));
+        return;
+      }
+      const local = searchLocal(q);
+      showDropdown(local);
+
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        if (local.length >= 3) return;
+        const hint = document.createElement('div');
+        hint.className = 'song-option searching';
+        hint.textContent = 'Searching online...';
+        dropdown.appendChild(hint);
+        dropdown.classList.remove('hidden');
+
+        const remote = await searchAPI(q);
+        if (remote.length) {
+          const merged = [...local];
+          const localIds = new Set(local.map((s) => s.id));
+          for (const r of remote) {
+            if (!localIds.has(r.id)) merged.push(r);
+          }
+          showDropdown(merged);
+        } else {
+          hint.remove();
+          if (!dropdown.children.length) dropdown.classList.add('hidden');
+        }
+      }, 400);
+    });
+
+    input.addEventListener('focus', () => {
+      const q = input.value.trim();
+      showDropdown(q ? searchLocal(q) : this.songs.slice(0, 10));
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.song-search-wrap')) {
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    if (this.songs.length) {
+      input.value = `${this.songs[0].title} — ${this.songs[0].artist}`;
+    }
+  }
+
+  loadCustomSongs() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('air-guitar-custom-songs') || '[]');
+      for (const s of saved) {
+        if (!this.songs.find((x) => x.id === s.id)) {
+          this.songs.push(s);
+        }
+      }
+    } catch { /* ignore corrupt data */ }
+  }
+
+  saveCustomSongs() {
+    const custom = this.songs.filter((s) => s.id.startsWith('custom-'));
+    localStorage.setItem('air-guitar-custom-songs', JSON.stringify(custom));
+  }
+
+  setupCustomSongModal() {
+    const modal = document.getElementById('custom-song-modal');
+    const backdrop = modal.querySelector('.modal-backdrop');
+
+    const open = () => modal.classList.remove('hidden');
+    const close = () => modal.classList.add('hidden');
+
+    document.getElementById('custom-song-btn').addEventListener('click', open);
+    document.getElementById('cs-cancel').addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+
+    document.getElementById('cs-save').addEventListener('click', () => {
+      const title = document.getElementById('cs-title').value.trim() || 'Untitled';
+      const bpm = parseInt(document.getElementById('cs-bpm').value) || 120;
+      const chordsRaw = document.getElementById('cs-chords').value.trim();
+      if (!chordsRaw) return;
+
+      const chords = chordsRaw.split(/[,\s]+/).filter(Boolean);
+      if (!chords.length) return;
+
+      const song = {
+        id: `custom-${Date.now()}`,
+        title,
+        artist: 'Custom',
+        bpm,
+        progression: chords.map((c) => ({ chord: c, beats: 4 })),
+      };
+
+      this.songs.push(song);
+      this.saveCustomSongs();
+      this.selectSong(song);
+      document.getElementById('song-search').value = `${song.title} — Custom`;
+      close();
+
+      document.getElementById('cs-title').value = '';
+      document.getElementById('cs-chords').value = '';
+    });
+  }
+
+  setGuitarColor(key) {
+    const preset = COLOR_PRESETS[key];
+    if (!preset) return;
+    this.guitarColor = key;
+    localStorage.setItem('air-guitar-color', key);
+
+    if (preset.color && this.guitarImg) {
+      const w = this.guitarImg.naturalWidth;
+      const h = this.guitarImg.naturalHeight;
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      const oc = off.getContext('2d');
+      oc.drawImage(this.guitarImg, 0, 0);
+      const imgData = oc.getImageData(0, 0, w, h);
+      const px = imgData.data;
+      const cr = parseInt(preset.color.slice(1, 3), 16);
+      const cg = parseInt(preset.color.slice(3, 5), 16);
+      const cb = parseInt(preset.color.slice(5, 7), 16);
+      const [tH, tS] = rgbToHsl(cr, cg, cb);
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 10) continue;
+        const [ph, ps, pl] = rgbToHsl(px[i], px[i + 1], px[i + 2]);
+        if (ph >= 130 && ph <= 210 && ps > 0.12 && pl > 0.08 && pl < 0.88) {
+          const [nr, ng, nb] = hslToRgb(tH, tS, pl);
+          px[i] = nr;
+          px[i + 1] = ng;
+          px[i + 2] = nb;
+        }
+      }
+      oc.putImageData(imgData, 0, 0);
+      this.coloredGuitar = off;
+    } else {
+      this.coloredGuitar = null;
+    }
+
+    document.querySelectorAll('.color-swatch').forEach((s) => {
+      s.classList.toggle('active', s.dataset.color === key);
+    });
   }
 
   togglePlay() {
@@ -889,7 +1154,7 @@ class App {
     if (!this.layout || !this.guitarImg) return;
     const L = this.layout;
 
-    c.drawImage(this.guitarImg, L.imgX, L.imgY, L.imgW, L.imgH);
+    c.drawImage(this.coloredGuitar || this.guitarImg, L.imgX, L.imgY, L.imgW, L.imgH);
     drawNeckDots(c, this.currentPos, L);
 
     if (L.diagW > 50) {

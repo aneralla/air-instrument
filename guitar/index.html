@@ -21,7 +21,11 @@
       <div id="top-bar">
         <h1>Air Guitar</h1>
         <div class="controls">
-          <select id="song-select"></select>
+          <button id="customize-btn">Color</button>
+          <div class="song-search-wrap">
+            <input id="song-search" type="text" placeholder="Search songs..." autocomplete="off">
+            <div id="song-dropdown" class="hidden"></div>
+          </div>
           <button id="play-btn">Play</button>
           <button id="auto-btn">Auto</button>
           <select id="pattern-select">
@@ -30,6 +34,7 @@
           </select>
           <button id="calibrate-btn">Set Strum</button>
           <button id="upstrum-btn">Up Strum</button>
+          <button id="custom-song-btn">+ Song</button>
         </div>
         <div class="transport">
           <span id="chord-name">--</span>
@@ -37,6 +42,16 @@
             <span class="dot"></span><span class="dot"></span>
             <span class="dot"></span><span class="dot"></span>
           </div>
+        </div>
+      </div>
+
+      <div id="customize-panel" class="hidden">
+        <div class="color-swatches">
+          <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
+          <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
+          <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
+          <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
+          <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
         </div>
       </div>
 
@@ -107,6 +122,30 @@
         </div>
 
         <div class="ob-dots" id="ob-dots"></div>
+      </div>
+
+      <div id="custom-song-modal" class="hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+          <h2>Custom Song</h2>
+          <label>
+            <span>Song Title</span>
+            <input id="cs-title" type="text" placeholder="My Song">
+          </label>
+          <label>
+            <span>BPM</span>
+            <input id="cs-bpm" type="number" value="120" min="40" max="240">
+          </label>
+          <label>
+            <span>Chords (comma-separated)</span>
+            <input id="cs-chords" type="text" placeholder="Am, C, G, F">
+          </label>
+          <p class="modal-hint">Each chord gets 4 beats. Use standard names like Am, C, G7, Dm, etc.</p>
+          <div class="modal-actions">
+            <button id="cs-cancel" class="modal-secondary">Cancel</button>
+            <button id="cs-save" class="modal-primary">Add Song</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
