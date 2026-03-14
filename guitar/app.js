@@ -519,7 +519,7 @@ class App {
     try {
       const [dbRes, songsRes, img] = await Promise.all([
         fetch(CHORD_DB_URL).then((r) => r.json()),
-        fetch('/songs.json').then((r) => r.json()),
+        fetch('songs.json').then((r) => r.json()),
         imgPromise,
         this.tracker.init(),
       ]);

@@ -3,113 +3,83 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Air Guitar</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Air Instruments</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0a14;
+      color: #e8e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 48px;
+    }
+    h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
+    p { color: rgba(255,255,255,0.5); font-size: 15px; }
+    .instruments {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .instrument-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 32px 40px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      text-decoration: none;
+      color: #e8e8f0;
+      transition: all 0.2s;
+      min-width: 180px;
+    }
+    .instrument-card:hover {
+      background: rgba(0, 212, 255, 0.08);
+      border-color: rgba(0, 212, 255, 0.3);
+      transform: translateY(-2px);
+    }
+    .instrument-card .icon { font-size: 48px; }
+    .instrument-card .name { font-size: 18px; font-weight: 600; }
+    .instrument-card .status {
+      font-size: 11px;
+      color: rgba(255,255,255,0.35);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .instrument-card .status.live { color: #00ff88; }
+    .coming-soon { opacity: 0.4; pointer-events: none; }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <div id="loading">
-      <div class="loader-ring"></div>
-      <p class="loader-title">Air Guitar</p>
-      <p class="loader-subtitle">Loading chord database and hand tracking...</p>
+  <div>
+    <h1>Air Instruments</h1>
+    <p>Play instruments with your webcam</p>
+  </div>
+  <div class="instruments">
+    <a href="/guitar/" class="instrument-card">
+      <span class="icon">🎸</span>
+      <span class="name">Guitar</span>
+      <span class="status live">Live</span>
+    </a>
+    <div class="instrument-card coming-soon">
+      <span class="icon">🎻</span>
+      <span class="name">Violin</span>
+      <span class="status">Coming soon</span>
     </div>
-
-    <div id="main" class="hidden">
-      <div id="top-bar">
-        <h1>Air Guitar</h1>
-        <div class="controls">
-          <select id="song-select"></select>
-          <button id="play-btn">Play</button>
-          <button id="auto-btn">Auto</button>
-          <select id="pattern-select">
-            <option value="simple">Simple</option>
-            <option value="realistic" selected>Realistic</option>
-          </select>
-          <button id="calibrate-btn">Set Strum</button>
-          <button id="upstrum-btn">Up Strum</button>
-        </div>
-        <div class="transport">
-          <span id="chord-name">--</span>
-          <div id="beat-dots">
-            <span class="dot"></span><span class="dot"></span>
-            <span class="dot"></span><span class="dot"></span>
-          </div>
-        </div>
-      </div>
-
-      <div id="stage">
-        <canvas id="guitar-canvas"></canvas>
-        <div id="camera-pip">
-          <video id="camera" autoplay playsinline muted></video>
-        </div>
-        <div id="calibrate-overlay" class="hidden">
-          <video id="calibrate-video" autoplay playsinline muted></video>
-          <canvas id="calibrate-canvas"></canvas>
-          <div id="calibrate-hint">Click the TOP of your strum area</div>
-        </div>
-      </div>
-
-      <div id="bottom-bar">
-        <div id="progression"></div>
-      </div>
-
-      <div id="onboarding" class="hidden">
-        <div class="ob-card" data-step="0">
-          <h2>Welcome to Air Guitar</h2>
-          <p>Play guitar with your webcam. We'll walk you through setup in 30 seconds.</p>
-          <button class="ob-primary" data-action="next">Get Started</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="1">
-          <h2>Camera Access</h2>
-          <p>We use your camera to track your hand movement. Your camera feed is shown below.</p>
-          <div class="ob-camera-preview">
-            <video id="ob-camera-preview" autoplay playsinline muted></video>
-          </div>
-          <p class="ob-small">Camera is ready!</p>
-          <button class="ob-primary" data-action="next">Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card ob-card-wide" data-step="2">
-          <h2>Set Your Strum Area</h2>
-          <p>Click the <strong>top</strong> of where you'll strum, then click the <strong>bottom</strong>. This maps your hand movement to the guitar strings.</p>
-          <div class="ob-calibrate-area">
-            <video id="ob-cal-video" autoplay playsinline muted></video>
-            <canvas id="ob-cal-canvas"></canvas>
-            <div id="ob-cal-hint">Click the TOP of your strum area</div>
-          </div>
-          <button class="ob-primary" data-action="next" disabled>Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="3">
-          <h2>How to Play</h2>
-          <ul class="ob-tips">
-            <li>Pick a song from the dropdown at the top</li>
-            <li>Click <strong>Play</strong> &mdash; chords advance automatically</li>
-            <li>Sweep your hand down across the strum area to play</li>
-            <li>Enable <strong>Up Strum</strong> to also play when sweeping back up</li>
-            <li>Click <strong>Auto</strong> to hear the song play itself</li>
-          </ul>
-          <button class="ob-primary" data-action="next">Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="4">
-          <h2>You're Ready!</h2>
-          <p>Start playing. You can recalibrate anytime with the <strong>Set Strum</strong> button in the top bar.</p>
-          <button class="ob-primary" data-action="done">Start Playing</button>
-        </div>
-
-        <div class="ob-dots" id="ob-dots"></div>
-      </div>
+    <div class="instrument-card coming-soon">
+      <span class="icon">🥁</span>
+      <span class="name">Drums</span>
+      <span class="status">Coming soon</span>
     </div>
   </div>
-  <script type="module" src="app.js"></script>
 </body>
 </html>
