@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Air Guitar</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <div id="loading">
+      <div class="loader-ring"></div>
+      <p class="loader-title">Air Guitar</p>
+      <p class="loader-subtitle">Loading chord database and hand tracking...</p>
+    </div>
+
+    <div id="main" class="hidden">
+      <div id="top-bar">
+        <h1>Air Guitar</h1>
+        <div class="controls">
+          <select id="song-select"></select>
+          <button id="play-btn">Play</button>
+          <button id="auto-btn">Auto</button>
+          <select id="pattern-select">
+            <option value="simple">Simple</option>
+            <option value="realistic" selected>Realistic</option>
+          </select>
+          <label class="strum-width-label">
+            Strum
+            <input type="range" id="strum-width" min="0.04" max="0.20" step="0.01" value="0.07">
+          </label>
+        </div>
+        <div class="transport">
+          <span id="chord-name">--</span>
+          <div id="beat-dots">
+            <span class="dot"></span><span class="dot"></span>
+            <span class="dot"></span><span class="dot"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="stage">
+        <canvas id="guitar-canvas"></canvas>
+        <div id="camera-pip">
+          <video id="camera" autoplay playsinline muted></video>
+        </div>
+      </div>
+
+      <div id="bottom-bar">
+        <div id="progression"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

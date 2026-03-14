@@ -1,0 +1,210 @@
+[
+  {
+    "id": "let-it-be",
+    "title": "Let It Be",
+    "artist": "The Beatles",
+    "bpm": 72,
+    "progression": [
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "Am", "beats": 4},
+      {"chord": "F", "beats": 4}
+    ]
+  },
+  {
+    "id": "knockin-on-heavens-door",
+    "title": "Knockin' on Heaven's Door",
+    "artist": "Bob Dylan",
+    "bpm": 68,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "Am", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "C", "beats": 4}
+    ]
+  },
+  {
+    "id": "horse-with-no-name",
+    "title": "A Horse With No Name",
+    "artist": "America",
+    "bpm": 120,
+    "progression": [
+      {"chord": "Em", "beats": 8},
+      {"chord": "D", "beats": 8}
+    ]
+  },
+  {
+    "id": "love-me-do",
+    "title": "Love Me Do",
+    "artist": "The Beatles",
+    "bpm": 148,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4}
+    ]
+  },
+  {
+    "id": "stand-by-me",
+    "title": "Stand By Me",
+    "artist": "Ben E. King",
+    "bpm": 120,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "Em", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "D", "beats": 4}
+    ]
+  },
+  {
+    "id": "riptide",
+    "title": "Riptide",
+    "artist": "Vance Joy",
+    "bpm": 102,
+    "progression": [
+      {"chord": "Am", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "C", "beats": 4}
+    ]
+  },
+  {
+    "id": "three-little-birds",
+    "title": "Three Little Birds",
+    "artist": "Bob Marley",
+    "bpm": 74,
+    "progression": [
+      {"chord": "A", "beats": 4},
+      {"chord": "A", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "A", "beats": 4},
+      {"chord": "A", "beats": 4},
+      {"chord": "E", "beats": 4}
+    ]
+  },
+  {
+    "id": "happy-birthday",
+    "title": "Happy Birthday",
+    "artist": "Traditional",
+    "bpm": 100,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "G", "beats": 4}
+    ]
+  },
+  {
+    "id": "country-roads",
+    "title": "Take Me Home, Country Roads",
+    "artist": "John Denver",
+    "bpm": 82,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "Em", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "C", "beats": 4}
+    ]
+  },
+  {
+    "id": "sweet-home-alabama",
+    "title": "Sweet Home Alabama",
+    "artist": "Lynyrd Skynyrd",
+    "bpm": 98,
+    "progression": [
+      {"chord": "D", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "G", "beats": 4}
+    ]
+  },
+  {
+    "id": "hallelujah",
+    "title": "Hallelujah",
+    "artist": "Leonard Cohen",
+    "bpm": 56,
+    "progression": [
+      {"chord": "C", "beats": 4},
+      {"chord": "Am", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "Am", "beats": 4},
+      {"chord": "F", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4}
+    ]
+  },
+  {
+    "id": "brown-eyed-girl",
+    "title": "Brown Eyed Girl",
+    "artist": "Van Morrison",
+    "bpm": 148,
+    "progression": [
+      {"chord": "G", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "D", "beats": 4}
+    ]
+  },
+  {
+    "id": "wish-you-were-here",
+    "title": "Wish You Were Here",
+    "artist": "Pink Floyd",
+    "bpm": 62,
+    "progression": [
+      {"chord": "Em", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "Em", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "Em", "beats": 4},
+      {"chord": "A", "beats": 4},
+      {"chord": "Em", "beats": 4},
+      {"chord": "G", "beats": 4}
+    ]
+  },
+  {
+    "id": "bad-moon-rising",
+    "title": "Bad Moon Rising",
+    "artist": "Creedence Clearwater Revival",
+    "bpm": 176,
+    "progression": [
+      {"chord": "D", "beats": 4},
+      {"chord": "A", "beats": 2},
+      {"chord": "G", "beats": 2},
+      {"chord": "D", "beats": 4}
+    ]
+  },
+  {
+    "id": "twist-and-shout",
+    "title": "Twist and Shout",
+    "artist": "The Beatles",
+    "bpm": 128,
+    "progression": [
+      {"chord": "D", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "A", "beats": 4},
+      {"chord": "A", "beats": 4}
+    ]
+  },
+  {
+    "id": "hotel-california",
+    "title": "Hotel California",
+    "artist": "Eagles",
+    "bpm": 74,
+    "progression": [
+      {"chord": "Am", "beats": 4},
+      {"chord": "E", "beats": 4},
+      {"chord": "G", "beats": 4},
+      {"chord": "D", "beats": 4},
+      {"chord": "F", "beats": 4},
+      {"chord": "C", "beats": 4},
+      {"chord": "Dm", "beats": 4},
+      {"chord": "E", "beats": 4}
+    ]
+  }
+]
