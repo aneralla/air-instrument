@@ -94,20 +94,69 @@ function actualFret(pos, stringIdx) {
 
 // ── Karplus-Strong audio ────────────────────────────────────
 
+const TONE_PRESETS = {
+  warm:   { lpFreq: 2800, shelfFreq: 3000, shelfGain: -4, reverbMix: 0.25, label: 'Warm' },
+  clean:  { lpFreq: 5000, shelfFreq: 3500, shelfGain: 0,  reverbMix: 0.15, label: 'Clean' },
+  bright: { lpFreq: 8000, shelfFreq: 3000, shelfGain: 6,  reverbMix: 0.10, label: 'Bright' },
+};
+const TONE_NAMES = Object.keys(TONE_PRESETS);
+
 class GuitarAudio {
   constructor() {
     this.ctx = null;
     this.out = null;
     this.cache = {};
+    this.toneName = 'clean';
   }
 
   init() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -10;
     comp.ratio.value = 4;
     comp.connect(this.ctx.destination);
-    this.out = comp;
+
+    this.lowpass = this.ctx.createBiquadFilter();
+    this.lowpass.type = 'lowpass';
+
+    this.shelf = this.ctx.createBiquadFilter();
+    this.shelf.type = 'highshelf';
+
+    this.reverbGain = this.ctx.createGain();
+    this.dryGain = this.ctx.createGain();
+
+    const reverbLen = this.ctx.sampleRate * 1.8;
+    const reverbBuf = this.ctx.createBuffer(2, reverbLen, this.ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = reverbBuf.getChannelData(ch);
+      for (let i = 0; i < reverbLen; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.6));
+      }
+    }
+    this.convolver = this.ctx.createConvolver();
+    this.convolver.buffer = reverbBuf;
+
+    this.lowpass.connect(this.shelf);
+    this.shelf.connect(this.dryGain);
+    this.shelf.connect(this.convolver);
+    this.convolver.connect(this.reverbGain);
+    this.dryGain.connect(comp);
+    this.reverbGain.connect(comp);
+
+    this.out = this.lowpass;
+    this.applyTone(this.toneName);
+  }
+
+  applyTone(name) {
+    const p = TONE_PRESETS[name] || TONE_PRESETS.clean;
+    this.toneName = name;
+    if (!this.ctx) return;
+    this.lowpass.frequency.value = p.lpFreq;
+    this.shelf.frequency.value = p.shelfFreq;
+    this.shelf.gain.value = p.shelfGain;
+    this.dryGain.gain.value = 1 - p.reverbMix;
+    this.reverbGain.gain.value = p.reverbMix;
   }
 
   start() {
@@ -232,12 +281,13 @@ function computeLayout(W, H, imgNatW, imgNatH, strumHalfWidth = 0.07) {
   const patX = diagX;
   const patY = diagY + diagH + 8;
   const patW = Math.max(diagW, 160);
+  const tlY = patY + 44;
 
   return {
     imgX, imgY, imgW, imgH, scale,
     stringYs, bodyLeft, bodyRight,
     fretXs,
-    patX, patY, patW,
+    patX, patY, patW, tlY,
     diagX, diagY, diagW, diagH,
   };
 }
@@ -356,6 +406,30 @@ function drawNeckDots(ctx, pos, layout) {
   }
 }
 
+function drawGhostDots(ctx, pos, layout) {
+  if (!pos) return;
+  const { fretXs, stringYs } = layout;
+  const dotR = Math.max(5, layout.imgH * 0.022);
+
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+
+  for (let s = 0; s < 6; s++) {
+    const f = pos.frets[s];
+    if (f <= 0 || f > fretXs.length) continue;
+    const fx = fretXs[f - 1];
+    const fy = stringYs[s];
+
+    ctx.beginPath();
+    ctx.arc(fx, fy, dotR + 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 // ── Strum overlay (body area) ───────────────────────────────
 
 function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
@@ -420,6 +494,71 @@ function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
   ctx.restore();
 }
 
+function drawBeatTimeline(ctx, patternName, beatInChord, totalBeats, x, y, w) {
+  if (beatInChord < 0 || totalBeats <= 0) return;
+  const pat = STRUM_PATTERNS[patternName];
+  if (!pat) return;
+
+  const h = 14;
+  const frac = beatInChord / totalBeats;
+
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeRect(x, y, w, h);
+
+  for (let b = 0; b <= totalBeats; b++) {
+    const bx = x + (b / totalBeats) * w;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(bx, y, 1, h);
+  }
+
+  for (const s of pat.strums) {
+    if (s.beat >= totalBeats) continue;
+    const sx = x + (s.beat / totalBeats) * w;
+    const isHit = beatInChord >= s.beat && beatInChord < s.beat + 0.3;
+    const markerH = h * 0.6;
+    const markerW = 5;
+    const my = y + (h - markerH) / 2;
+
+    if (isHit) {
+      ctx.fillStyle = s.dir === 'down' ? 'rgba(0,212,255,0.9)' : 'rgba(0,255,136,0.9)';
+      ctx.shadowColor = s.dir === 'down' ? '#00d4ff' : '#00ff88';
+      ctx.shadowBlur = 8;
+    } else {
+      ctx.fillStyle = s.dir === 'down' ? 'rgba(0,212,255,0.4)' : 'rgba(0,255,136,0.4)';
+      ctx.shadowBlur = 0;
+    }
+
+    if (s.dir === 'down') {
+      ctx.beginPath();
+      ctx.moveTo(sx, my);
+      ctx.lineTo(sx - markerW / 2, my);
+      ctx.lineTo(sx, my + markerH);
+      ctx.lineTo(sx + markerW / 2, my);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(sx, my + markerH);
+      ctx.lineTo(sx - markerW / 2, my + markerH);
+      ctx.lineTo(sx, my);
+      ctx.lineTo(sx + markerW / 2, my + markerH);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  const px = x + frac * w;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(px - 1, y - 2, 2, h + 4);
+
+  ctx.restore();
+}
+
 function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
   const { stringYs, bodyLeft, bodyRight } = layout;
   const now = performance.now();
@@ -477,17 +616,30 @@ class ProgressionTimer {
     this.bpm = 100;
     this.startTime = 0;
     this.running = false;
+    this.finished = false;
     this.idx = 0;
     this.beatInChord = 0;
+
+    this.sections = null;
+    this.sectionIdx = 0;
+    this.sectionRepeat = 0;
+    this.loopCount = 0;
+    this.onFinish = null;
   }
 
-  start(progression, bpm) {
+  start(progression, bpm, sections) {
     this.progression = progression;
     this.bpm = bpm;
     this.startTime = performance.now();
     this.running = true;
+    this.finished = false;
     this.idx = 0;
     this.beatInChord = 0;
+    this.loopCount = 0;
+
+    this.sections = sections && sections.length ? sections : null;
+    this.sectionIdx = 0;
+    this.sectionRepeat = 0;
   }
 
   stop() { this.running = false; }
@@ -498,22 +650,76 @@ class ProgressionTimer {
     const beatDur = 60 / this.bpm;
     const totalBeat = elapsed / beatDur;
     const totalBeats = this.progression.reduce((s, c) => s + c.beats, 0);
-    const looped = totalBeat % totalBeats;
 
-    let accum = 0;
-    for (let i = 0; i < this.progression.length; i++) {
-      if (looped < accum + this.progression[i].beats) {
-        this.idx = i;
-        this.beatInChord = looped - accum;
+    if (this.sections) {
+      const totalSectionPasses = this.sections.reduce((s, sec) => s + sec.repeats, 0);
+      const totalSongBeats = totalSectionPasses * totalBeats;
+
+      if (totalBeat >= totalSongBeats) {
+        this.finished = true;
+        this.running = false;
+        if (this.onFinish) this.onFinish();
         return;
       }
-      accum += this.progression[i].beats;
+
+      let remaining = totalBeat;
+      let secIdx = 0;
+      let secRep = 0;
+      for (let si = 0; si < this.sections.length; si++) {
+        const secBeats = this.sections[si].repeats * totalBeats;
+        if (remaining < secBeats) {
+          secIdx = si;
+          secRep = Math.floor(remaining / totalBeats);
+          remaining = remaining % totalBeats;
+          break;
+        }
+        remaining -= secBeats;
+      }
+      this.sectionIdx = secIdx;
+      this.sectionRepeat = secRep;
+
+      let accum = 0;
+      for (let i = 0; i < this.progression.length; i++) {
+        if (remaining < accum + this.progression[i].beats) {
+          this.idx = i;
+          this.beatInChord = remaining - accum;
+          return;
+        }
+        accum += this.progression[i].beats;
+      }
+    } else {
+      const looped = totalBeat % totalBeats;
+      const newLoop = Math.floor(totalBeat / totalBeats);
+      if (newLoop !== this.loopCount) this.loopCount = newLoop;
+
+      let accum = 0;
+      for (let i = 0; i < this.progression.length; i++) {
+        if (looped < accum + this.progression[i].beats) {
+          this.idx = i;
+          this.beatInChord = looped - accum;
+          return;
+        }
+        accum += this.progression[i].beats;
+      }
     }
   }
 
   currentChord() { return this.progression[this.idx]; }
   currentBeat() { return Math.floor(this.beatInChord); }
   currentBeatsTotal() { return this.progression[this.idx]?.beats || 4; }
+
+  currentSectionName() {
+    if (!this.sections || !this.sections[this.sectionIdx]) return null;
+    return this.sections[this.sectionIdx].name;
+  }
+
+  currentSectionLabel() {
+    if (!this.sections) return null;
+    const sec = this.sections[this.sectionIdx];
+    if (!sec) return null;
+    if (sec.repeats <= 1) return sec.name;
+    return `${sec.name} (${this.sectionRepeat + 1}/${sec.repeats})`;
+  }
 
   progress() {
     if (!this.running || !this.progression.length) return 0;
@@ -660,6 +866,7 @@ class App {
     this.timer = new ProgressionTimer();
     this.lastTimerIdx = -1;
     this.playing = false;
+    this.chordFlashTime = 0;
 
     this.handState = { x: 0, y: 0, prevY: 0, active: false };
     this.stringStates = new Array(6).fill(0);
@@ -732,6 +939,7 @@ class App {
       btn.classList.toggle('active', this.upStrumEnabled);
       btn.textContent = this.upStrumEnabled ? 'Up Strum On' : 'Up Strum';
     });
+    document.getElementById('tone-btn').addEventListener('click', () => this.cycleTone());
 
     const calCanvas = document.getElementById('calibrate-canvas');
     calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
@@ -875,6 +1083,13 @@ class App {
       overrides[this.currentSong.id] = next;
       localStorage.setItem('air-guitar-pattern-overrides', JSON.stringify(overrides));
     }
+  }
+
+  cycleTone() {
+    const idx = TONE_NAMES.indexOf(this.audio.toneName);
+    const next = TONE_NAMES[(idx + 1) % TONE_NAMES.length];
+    this.audio.applyTone(next);
+    document.getElementById('tone-btn').textContent = 'Tone: ' + TONE_PRESETS[next].label;
   }
 
   async fetchSongsterrChords(song) {
@@ -1103,12 +1318,20 @@ class App {
       }
       this.playing = true;
       this.audio.start();
-      this.timer.start(this.currentSong.progression, this.currentSong.bpm);
+      this.timer.start(this.currentSong.progression, this.currentSong.bpm, this.currentSong.sections);
+      this.timer.onFinish = () => this.onSongFinished();
       this.lastTimerIdx = -1;
       btn.textContent = 'Stop';
       btn.classList.add('active');
       this.completeStep(5);
     }
+  }
+
+  onSongFinished() {
+    if (this.autoMode) this.toggleAuto();
+    if (this.playing) this.togglePlay();
+    const el = document.getElementById('section-label');
+    if (el) el.textContent = 'Finished!';
   }
 
   toggleAuto() {
@@ -1263,6 +1486,13 @@ class App {
     const el = document.getElementById('progression');
     el.innerHTML = '';
     if (!this.currentSong) return;
+
+    const sectionLabel = this.timer.currentSectionLabel();
+    const labelEl = document.getElementById('section-label');
+    if (labelEl) {
+      labelEl.textContent = sectionLabel || '';
+    }
+
     this.currentSong.progression.forEach((c, i) => {
       const pill = document.createElement('span');
       pill.className = 'chord-pill';
@@ -1373,7 +1603,10 @@ class App {
       if (idx !== this.lastTimerIdx) {
         this.lastTimerIdx = idx;
         const ch = this.timer.currentChord();
-        if (ch) this.setChord(ch.chord);
+        if (ch) {
+          this.setChord(ch.chord);
+          this.chordFlashTime = performance.now();
+        }
         this.updateProgressionDisplay(idx);
       }
       this.updateBeatDots(this.timer.currentBeat(), this.timer.currentBeatsTotal());
@@ -1390,7 +1623,39 @@ class App {
     const L = this.layout;
 
     c.drawImage(this.coloredGuitar || this.guitarImg, L.imgX, L.imgY, L.imgW, L.imgH);
+
+    if (this.playing && this.currentSong) {
+      const totalBeatsInChord = this.timer.currentBeatsTotal();
+      const beatsLeft = totalBeatsInChord - this.timer.beatInChord;
+      if (beatsLeft <= 1) {
+        const nextIdx = (this.timer.idx + 1) % this.currentSong.progression.length;
+        const nextChordName = this.currentSong.progression[nextIdx].chord;
+        const nextPos = lookupChord(this.chordDB, nextChordName);
+        if (nextPos && nextChordName !== this.currentChordName) {
+          drawGhostDots(c, nextPos, L);
+        }
+      }
+    }
+
     drawNeckDots(c, this.currentPos, L);
+
+    if (this.chordFlashTime && performance.now() - this.chordFlashTime < 200) {
+      const t = (performance.now() - this.chordFlashTime) / 200;
+      c.save();
+      c.globalAlpha = 0.3 * (1 - t);
+      c.fillStyle = '#00d4ff';
+      const dotR = Math.max(5, L.imgH * 0.022);
+      if (this.currentPos) {
+        for (let s = 0; s < 6; s++) {
+          const f = this.currentPos.frets[s];
+          if (f <= 0 || f > L.fretXs.length) continue;
+          c.beginPath();
+          c.arc(L.fretXs[f - 1], L.stringYs[s], dotR + 4 + t * 6, 0, Math.PI * 2);
+          c.fill();
+        }
+      }
+      c.restore();
+    }
 
     if (L.diagW > 50) {
       drawChordDiagram(
@@ -1402,6 +1667,11 @@ class App {
 
     const beat = this.playing ? this.timer.beatInChord : -1;
     drawStrumPattern(c, this.activePatternName, beat, L.patX, L.patY, L.patW);
+
+    if (this.playing) {
+      const totalBeats = this.timer.currentBeatsTotal();
+      drawBeatTimeline(c, this.activePatternName, beat, totalBeats, L.patX, L.tlY, L.patW);
+    }
 
     let cursor = null;
 
