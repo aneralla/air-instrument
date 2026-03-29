@@ -19,52 +19,37 @@
 
     <div id="main" class="hidden">
       <div id="top-bar">
-        <h1>Air Guitar</h1>
-        <div class="bar-sep"></div>
-
-        <div class="bar-group" id="color-group">
-          <span class="step-label step-active" data-step="1">Set Guitar Color</span>
-          <div id="color-swatches">
-            <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
-            <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
-            <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
-            <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
-            <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
-          </div>
-        </div>
-        <div class="bar-sep"></div>
-
-        <div class="bar-group" id="strum-setup-group">
-          <span class="step-label" data-step="2">Then</span>
-          <button id="calibrate-btn" class="bar-btn" title="Calibrate your physical strum area using the camera">Set Strum</button>
+        <div class="title-group">
+          <h1>Air Guitar</h1>
+          <p class="tagline">Play guitar with just your hands</p>
         </div>
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="song-group">
-          <span class="step-label" data-step="3">Pick a Song</span>
-          <div class="song-search-wrap">
-            <input id="song-search" type="text" placeholder="Search songs..." autocomplete="off">
-            <div id="song-dropdown" class="hidden"></div>
-          </div>
+          <button id="current-song-btn" class="current-song-btn" title="Change song">
+            <span id="current-song-label">Let It Be</span>
+            <span class="current-song-change">&#9662;</span>
+          </button>
           <button id="custom-song-btn" title="Add custom song">+</button>
         </div>
         <div class="bar-sep"></div>
 
-        <div class="bar-group" id="strum-group">
-          <span class="step-label step-optional" data-step="4">Optional</span>
-          <button id="upstrum-btn" class="bar-btn" title="Toggle up-strum detection (default: down-strum only)">Up Strum</button>
-          <button id="tone-btn" class="bar-btn" title="Click to cycle guitar tone: Warm, Clean, Bright">Tone: Clean</button>
-          <button id="pattern-label" class="bar-btn hidden" title="Click to cycle through strumming patterns">Pattern: Pop</button>
+        <div class="bar-group" id="strum-setup-group">
+          <button id="calibrate-btn" class="bar-btn" title="Set up your strum area on camera">Calibrate</button>
         </div>
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="play-group">
-          <span class="step-label" data-step="5">Play!</span>
           <div class="playback-group">
-            <button id="play-btn" title="Start the song — you strum along with your hand">Play</button>
-            <button id="auto-btn" title="Auto-strum — the app plays the strumming pattern for you">Auto</button>
+            <button id="play-btn" title="Start the song — strum along with your hand">Play</button>
+            <button id="auto-btn" title="Watch a demo — the app plays for you">Demo</button>
           </div>
-          <div class="transport">
+          <div class="speed-control bar-advanced hidden">
+            <button id="speed-down" class="speed-btn" title="Slower">−</button>
+            <span id="speed-label" title="Chord change speed">1x</span>
+            <button id="speed-up" class="speed-btn" title="Faster">+</button>
+          </div>
+          <div class="transport bar-advanced hidden">
             <span id="chord-name">--</span>
             <div id="beat-dots">
               <span class="dot"></span><span class="dot"></span>
@@ -72,23 +57,124 @@
             </div>
           </div>
         </div>
+        <div class="bar-sep"></div>
+
+        <div class="bar-group" id="settings-group">
+          <button id="settings-btn" class="bar-btn icon-btn" title="Settings">&#9881;</button>
+          <div id="settings-panel" class="hidden">
+            <div class="settings-section">
+              <span class="settings-label">Guitar Color</span>
+              <div id="color-swatches">
+                <button class="color-swatch" data-color="original" style="background:#2a9e8f" title="Original"></button>
+                <button class="color-swatch" data-color="cherry" style="background:#cc2222" title="Cherry Red"></button>
+                <button class="color-swatch" data-color="sunburst" style="background:#cc8800" title="Sunburst"></button>
+                <button class="color-swatch" data-color="ocean" style="background:#2255cc" title="Ocean Blue"></button>
+                <button class="color-swatch" data-color="blackout" style="background:#222222" title="Blackout"></button>
+              </div>
+            </div>
+            <div class="settings-section">
+              <span class="settings-label">Sound</span>
+              <div class="settings-row">
+                <button id="tone-btn" class="bar-btn" title="Cycle tone: Warm, Clean, Bright">Tone: Clean</button>
+              </div>
+            </div>
+            <div class="settings-section">
+              <span class="settings-label">Rhythm</span>
+              <div class="settings-row">
+                <button id="pattern-label" class="bar-btn" title="Cycle strumming patterns">Pattern: Pop</button>
+                <button id="metronome-btn" class="bar-btn" title="Toggle metronome click">Metronome</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button id="help-btn" class="bar-btn icon-btn" title="Show tutorial">?</button>
       </div>
 
       <div id="stage">
         <canvas id="guitar-canvas"></canvas>
-        <div id="camera-pip">
+        <div id="camera-pip" class="pip-hidden">
           <video id="camera" autoplay playsinline muted></video>
+          <span class="pip-label">Hand tracking</span>
         </div>
         <div id="calibrate-overlay" class="hidden">
           <video id="calibrate-video" autoplay playsinline muted></video>
           <canvas id="calibrate-canvas"></canvas>
           <div id="calibrate-hint">Click the TOP of your strum area</div>
+          <button id="calibrate-reset" class="calibrate-reset-btn" style="display:none">Reset</button>
+          <button id="calibrate-skip" class="calibrate-skip-btn">Skip — use defaults</button>
+        </div>
+
+        <div id="welcome-overlay">
+          <div class="welcome-content">
+            <div class="welcome-song-picker" id="welcome-song-picker">
+              <div class="welcome-song" id="welcome-song">
+                <span class="welcome-song-title">Let It Be</span>
+                <span class="welcome-song-artist">The Beatles</span>
+              </div>
+              <button id="welcome-change-song" class="welcome-change-song">Change song</button>
+              <div id="welcome-search-wrap" class="welcome-search-wrap hidden">
+                <input id="welcome-search" type="text" placeholder="Search thousands of songs..." autocomplete="off">
+                <div id="welcome-search-results" class="welcome-search-results"></div>
+              </div>
+            </div>
+            <div class="welcome-steps">
+              <div class="welcome-step">
+                <div class="welcome-step-num">1</div>
+                <div class="welcome-step-text">Set up your camera<br><button id="welcome-calibrate" class="welcome-link">Calibrate strum area</button><br><button id="welcome-skip-cal" class="welcome-skip-link">or skip — use defaults</button></div>
+              </div>
+              <div class="welcome-step-arrow">&rarr;</div>
+              <div class="welcome-step">
+                <div class="welcome-step-num">2</div>
+                <div class="welcome-step-text">Hit play and<br>strum with your hand<br><span class="welcome-kb-hint">or press <kbd>Space</kbd> to strum</span></div>
+              </div>
+            </div>
+            <div class="welcome-zones">
+              <span class="welcome-pattern-label">Strum Zones</span>
+              <div class="zone-diagram">
+                <div class="zone-half zone-down">
+                  <span class="zone-arrow">&#9660;</span>
+                  <span class="zone-label">Down only</span>
+                </div>
+                <div class="zone-divider"></div>
+                <div class="zone-half zone-both">
+                  <span class="zone-arrow">&#9660;&#9650;</span>
+                  <span class="zone-label">Down + Up</span>
+                </div>
+              </div>
+              <span class="zone-hint">Move your hand left or right on the guitar body to switch</span>
+            </div>
+
+            <div class="welcome-pattern" id="welcome-pattern">
+              <span class="welcome-pattern-label">Strum Pattern</span>
+              <button id="welcome-pattern-btn" class="welcome-pattern-display" title="Click to change pattern">
+                <span id="welcome-pattern-name">Pop</span>
+                <span id="welcome-pattern-slots" class="pattern-slots"></span>
+                <span class="welcome-pattern-change">change</span>
+              </button>
+            </div>
+            <div class="welcome-speed">
+              <span class="welcome-pattern-label">Speed</span>
+              <div class="welcome-speed-row">
+                <button id="welcome-speed-down" class="speed-btn" title="Slower">−</button>
+                <span id="welcome-speed-label" class="welcome-speed-value">1x</span>
+                <button id="welcome-speed-up" class="speed-btn" title="Faster">+</button>
+              </div>
+            </div>
+            <button id="welcome-play" class="welcome-play-btn">&#9654; Play</button>
+            <p class="welcome-hint">Or click <strong>Demo</strong> above to watch it play itself</p>
+          </div>
         </div>
       </div>
 
       <div id="bottom-bar">
         <span id="section-label"></span>
         <div id="progression"></div>
+        <div id="score-display" class="hidden">
+          <span id="score-value">0</span>
+          <span id="streak-value"></span>
+          <div id="score-tooltip" class="score-tooltip hidden">Strum on beat to score points!</div>
+        </div>
       </div>
 
       <div id="onboarding" class="hidden">
@@ -128,8 +214,8 @@
             <li>Pick a song from the dropdown at the top</li>
             <li>Click <strong>Play</strong> &mdash; chords advance automatically</li>
             <li>Sweep your hand down across the strum area to play</li>
-            <li>Enable <strong>Up Strum</strong> to also play when sweeping back up</li>
-            <li>Click <strong>Auto</strong> to hear the song play itself</li>
+            <li>Move to the <strong>right zone</strong> to strum both down and up</li>
+            <li>Click <strong>Demo</strong> to hear the song play itself</li>
           </ul>
           <button class="ob-primary" data-action="next">Next</button>
           <button class="ob-skip" data-action="skip">Skip</button>
@@ -137,7 +223,7 @@
 
         <div class="ob-card" data-step="4">
           <h2>You're Ready!</h2>
-          <p>Start playing. You can recalibrate anytime with the <strong>Set Strum</strong> button in the top bar.</p>
+          <p>Start playing. You can recalibrate anytime with the <strong>Calibrate</strong> button in the top bar.</p>
           <button class="ob-primary" data-action="done">Start Playing</button>
         </div>
 

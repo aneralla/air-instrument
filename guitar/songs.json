@@ -4,7 +4,7 @@
     "title": "Let It Be",
     "artist": "The Beatles",
     "bpm": 72,
-    "pattern": "ballad",
+    "pattern": "let-it-be",
     "progression": [
       {"chord": "C", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -24,7 +24,7 @@
     "title": "Knockin' on Heaven's Door",
     "artist": "Bob Dylan",
     "bpm": 68,
-    "pattern": "ballad",
+    "pattern": "knockin",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "D", "beats": 4},
@@ -39,7 +39,7 @@
     "title": "A Horse With No Name",
     "artist": "America",
     "bpm": 120,
-    "pattern": "pop",
+    "pattern": "horse",
     "progression": [
       {"chord": "Em", "beats": 8},
       {"chord": "D", "beats": 8}
@@ -63,7 +63,7 @@
     "title": "Stand By Me",
     "artist": "Ben E. King",
     "bpm": 120,
-    "pattern": "pop",
+    "pattern": "stand-by-me",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -76,7 +76,7 @@
     "title": "Riptide",
     "artist": "Vance Joy",
     "bpm": 102,
-    "pattern": "pop",
+    "pattern": "riptide",
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -119,7 +119,7 @@
     "title": "Take Me Home, Country Roads",
     "artist": "John Denver",
     "bpm": 82,
-    "pattern": "pop",
+    "pattern": "country-roads",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -132,7 +132,7 @@
     "title": "Sweet Home Alabama",
     "artist": "Lynyrd Skynyrd",
     "bpm": 98,
-    "pattern": "rock",
+    "pattern": "sweet-home",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -145,7 +145,7 @@
     "title": "Hallelujah",
     "artist": "Leonard Cohen",
     "bpm": 56,
-    "pattern": "ballad",
+    "pattern": "hallelujah",
     "progression": [
       {"chord": "C", "beats": 4},
       {"chord": "Am", "beats": 4},
@@ -183,7 +183,7 @@
     "title": "Wish You Were Here",
     "artist": "Pink Floyd",
     "bpm": 62,
-    "pattern": "ballad",
+    "pattern": "wish-you-were-here",
     "progression": [
       {"chord": "Em", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -200,7 +200,7 @@
     "title": "Bad Moon Rising",
     "artist": "Creedence Clearwater Revival",
     "bpm": 176,
-    "pattern": "rock",
+    "pattern": "bad-moon",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "A", "beats": 2},
@@ -213,7 +213,7 @@
     "title": "Twist and Shout",
     "artist": "The Beatles",
     "bpm": 128,
-    "pattern": "rock",
+    "pattern": "twist-and-shout",
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -226,7 +226,7 @@
     "title": "Hotel California",
     "artist": "Eagles",
     "bpm": 74,
-    "pattern": "pop",
+    "pattern": "hotel-california",
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "E", "beats": 4},

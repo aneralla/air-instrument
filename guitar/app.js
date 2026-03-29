@@ -204,6 +204,20 @@ class GuitarAudio {
     g.connect(this.out);
     src.start(this.ctx.currentTime + delayMs / 1000);
   }
+
+  playClick(accent = false) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = accent ? 1200 : 800;
+    g.gain.setValueAtTime(accent ? 0.18 : 0.12, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
+    osc.connect(g);
+    g.connect(this.ctx.destination);
+    osc.start(this.ctx.currentTime);
+    osc.stop(this.ctx.currentTime + 0.04);
+  }
 }
 
 // ── Hand tracker ────────────────────────────────────────────
@@ -283,9 +297,11 @@ function computeLayout(W, H, imgNatW, imgNatH, strumHalfWidth = 0.07) {
   const patW = Math.max(diagW, 160);
   const tlY = patY + 44;
 
+  const bodyMidX = (bodyLeft + bodyRight) / 2;
+
   return {
     imgX, imgY, imgW, imgH, scale,
-    stringYs, bodyLeft, bodyRight,
+    stringYs, bodyLeft, bodyRight, bodyMidX,
     fretXs,
     patX, patY, patW, tlY,
     diagX, diagY, diagW, diagH,
@@ -559,10 +575,47 @@ function drawBeatTimeline(ctx, patternName, beatInChord, totalBeats, x, y, w) {
   ctx.restore();
 }
 
-function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
-  const { stringYs, bodyLeft, bodyRight } = layout;
-  const now = performance.now();
+const STRING_LABELS = ['E', 'A', 'D', 'G', 'B', 'e'];
 
+function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
+  const { stringYs, bodyLeft, bodyRight, bodyMidX } = layout;
+  const now = performance.now();
+  const zoneTop = stringYs[0] - 10;
+  const zoneBot = stringYs[5] + 10;
+  const zoneH = zoneBot - zoneTop;
+  const inRight = cursor && cursor.x >= bodyMidX;
+
+  // ── Zone backgrounds ──
+  ctx.save();
+  // Down-only zone (left)
+  ctx.fillStyle = (cursor && !inRight) ? 'rgba(0, 212, 255, 0.08)' : 'rgba(0, 212, 255, 0.03)';
+  ctx.fillRect(bodyLeft, zoneTop, bodyMidX - bodyLeft, zoneH);
+  // Down+Up zone (right)
+  ctx.fillStyle = (cursor && inRight) ? 'rgba(0, 255, 136, 0.08)' : 'rgba(0, 255, 136, 0.03)';
+  ctx.fillRect(bodyMidX, zoneTop, bodyRight - bodyMidX, zoneH);
+
+  // Divider
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(bodyMidX, zoneTop);
+  ctx.lineTo(bodyMidX, zoneBot);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Zone labels
+  ctx.font = '11px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const labelY = zoneBot + 6;
+  ctx.fillStyle = (cursor && !inRight) ? 'rgba(0, 212, 255, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+  ctx.fillText('\u25BC Down', (bodyLeft + bodyMidX) / 2, labelY);
+  ctx.fillStyle = (cursor && inRight) ? 'rgba(0, 255, 136, 0.6)' : 'rgba(0, 255, 136, 0.3)';
+  ctx.fillText('\u25BC\u25B2 Down + Up', (bodyMidX + bodyRight) / 2, labelY);
+  ctx.restore();
+
+  // ── String vibrations ──
   for (let s = 0; s < 6; s++) {
     const y = stringYs[s];
     const age = now - (stringStates[s] || 0);
@@ -580,9 +633,32 @@ function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
         ctx.lineTo(x, y + Math.sin(x * 0.06 + now * 0.015) * amp);
       }
       ctx.stroke();
+
+      if (age < 120) {
+        ctx.save();
+        ctx.globalAlpha = (1 - age / 120) * 0.7;
+        ctx.fillStyle = '#ffd264';
+        ctx.font = 'bold 10px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(STRING_LABELS[s], bodyLeft - 6, y);
+        ctx.restore();
+      }
+    }
+
+    if (muted) {
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#f44336';
+      ctx.font = 'bold 10px Inter, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('x', bodyLeft - 6, y);
+      ctx.restore();
     }
   }
 
+  // ── Cursor ──
   if (cursor) {
     const glow = ctx.createRadialGradient(cursor.x, cursor.y, 0, cursor.x, cursor.y, 20);
     glow.addColorStop(0, 'rgba(255,255,255,0.35)');
@@ -597,14 +673,27 @@ function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
     ctx.fill();
   }
 
+  // ── Ghost hints when no hand detected ──
   if (!cursor) {
-    const midX = (bodyLeft + bodyRight) / 2;
-    const botY = stringYs[5] + 22;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.font = '12px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Strum \u2191\u2193', midX, botY);
+    const rangeY = stringYs[5] - stringYs[0];
+    const t = (Math.sin(now * 0.0025) + 1) / 2;
+
+    // Ghost in down-only zone (just sweeps down)
+    const leftX = (bodyLeft + bodyMidX) / 2;
+    const leftY = stringYs[0] + t * rangeY;
+    ctx.fillStyle = 'rgba(0, 212, 255, 0.12)';
+    ctx.beginPath();
+    ctx.arc(leftX, leftY, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ghost in down+up zone (sweeps down then up)
+    const rightX = (bodyMidX + bodyRight) / 2;
+    const tBoth = (Math.sin(now * 0.003) + 1) / 2;
+    const rightY = stringYs[0] + tBoth * rangeY;
+    ctx.fillStyle = 'rgba(0, 255, 136, 0.12)';
+    ctx.beginPath();
+    ctx.arc(rightX, rightY, 10, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -731,6 +820,30 @@ class ProgressionTimer {
   }
 }
 
+// ── Song difficulty ─────────────────────────────────────────
+
+const BARRE_CHORDS = new Set(['F', 'Fm', 'Bb', 'Bm', 'B', 'F#m', 'C#m', 'Ab', 'Eb']);
+
+function songDifficulty(song) {
+  if (!song.progression || !song.progression.length) {
+    return { level: 0, label: '?', color: '#888' };
+  }
+  const chords = new Set(song.progression.map((c) => c.chord));
+  const count = chords.size;
+  const hasBarre = [...chords].some((c) => BARRE_CHORDS.has(c));
+  const bpm = song.bpm || 120;
+
+  let score = 0;
+  score += Math.min(count, 8);
+  if (hasBarre) score += 3;
+  if (bpm > 140) score += 2;
+  else if (bpm > 110) score += 1;
+
+  if (score <= 4) return { level: 1, label: 'Easy', color: '#4caf50' };
+  if (score <= 7) return { level: 2, label: 'Medium', color: '#ff9800' };
+  return { level: 3, label: 'Hard', color: '#f44336' };
+}
+
 // ── Strum patterns ──────────────────────────────────────────
 
 const STRUM_PATTERNS = {
@@ -746,11 +859,12 @@ const STRUM_PATTERNS = {
   },
   ballad: {
     label: 'Ballad',
-    slots: ['D', '-', 'D', 'U', '-', '-', '-', '-'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', '-', '-'],
     strums: [
       { beat: 0, dir: 'down' },
       { beat: 1, dir: 'down' },
       { beat: 1.5, dir: 'up' },
+      { beat: 2.5, dir: 'up' },
     ],
   },
   pop: {
@@ -785,8 +899,149 @@ const STRUM_PATTERNS = {
       { beat: 3.5, dir: 'up' },
     ],
   },
+  'let-it-be': {
+    label: 'Let It Be',
+    slots: ['D', '-', '-', 'U', 'D', 'U', '-', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'knockin': {
+    label: "Knockin'",
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', '-'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+    ],
+  },
+  'horse': {
+    label: 'Horse',
+    slots: ['D', '-', '-', 'U', 'D', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'stand-by-me': {
+    label: 'Stand By Me',
+    slots: ['D', '-', 'D', '-', 'D', 'U', '-', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'riptide': {
+    label: 'Riptide',
+    slots: ['D', '-', 'D', 'U', 'D', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'country-roads': {
+    label: 'Country Roads',
+    slots: ['D', 'U', 'D', 'U', 'D', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 0.5, dir: 'up'   },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'sweet-home': {
+    label: 'Sweet Home',
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', '-'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+    ],
+  },
+  'hallelujah': {
+    label: 'Hallelujah',
+    slots: ['D', '-', '-', 'D', '-', '-', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1.5, dir: 'down' },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'wish-you-were-here': {
+    label: 'Wish',
+    slots: ['D', '-', 'D', 'U', '-', '-', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'hotel-california': {
+    label: 'Hotel California',
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'bad-moon': {
+    label: 'Bad Moon Rising',
+    slots: ['D', 'D', 'U', '-', 'D', '-', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 0.5, dir: 'down' },
+      { beat: 1,   dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'twist-and-shout': {
+    label: 'Twist & Shout',
+    slots: ['D', '-', 'D', '-', 'D', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
 };
 
+const GENERIC_PATTERNS = ['simple', 'ballad', 'pop', 'rock', 'reggae'];
 const PATTERN_NAMES = Object.keys(STRUM_PATTERNS);
 
 function inferPattern(bpm) {
@@ -874,17 +1129,29 @@ class App {
     this.autoPlayer = new AutoPlayer((dir) => this.triggerAutoStrum(dir));
     this.autoStrum = { active: false, startTime: 0, duration: 60, direction: 'down' };
     this.autoMode = false;
-    this.strumHalfWidth = 0.07;
+    this.strumHalfWidth = 0.11;
+    this.speedMultiplier = 1.0;
 
     this.strumCamTop = 0.0;
     this.strumCamBottom = 1.0;
     this.calibrating = false;
     this.calibrateStep = 0;
-    this.upStrumEnabled = false;
 
     this.guitarColor = localStorage.getItem('air-guitar-color') || 'original';
     this.coloredGuitar = null;
     this.activePatternName = 'pop';
+
+    this.metronomeOn = false;
+    this.lastMetronomeBeat = -1;
+
+    this.score = 0;
+    this.streak = 0;
+    this.bestStreak = 0;
+    this.timingPopup = null;
+    this.calibrated = false;
+    this.hasPlayedOnce = false;
+    this.scoreTooltipShown = false;
+    this.cameraAvailable = false;
 
     this.init();
   }
@@ -905,12 +1172,20 @@ class App {
         fetch(CHORD_DB_URL).then((r) => r.json()),
         fetch('songs.json').then((r) => r.json()),
         imgPromise,
-        this.tracker.init(),
       ]);
       this.chordDB = dbRes;
       this.songs = songsRes;
       this.guitarImg = img;
-      await this.tracker.startCamera();
+
+      // Camera + hand tracking are optional — app works with keyboard fallback
+      try {
+        await this.tracker.init();
+        await this.tracker.startCamera();
+        this.cameraAvailable = true;
+      } catch (camErr) {
+        console.warn('Camera unavailable, using keyboard/mouse fallback:', camErr.message);
+        this.cameraAvailable = false;
+      }
     } catch (err) {
       document.getElementById('loading').innerHTML =
         `<p class="error-message">Could not load</p>` +
@@ -926,20 +1201,30 @@ class App {
     this.resize();
     window.addEventListener('resize', () => this.resize());
 
-    this.setupSongSearch();
+    // Current song button: shows welcome overlay with search
+    document.getElementById('current-song-btn').addEventListener('click', () => {
+      if (this.playing) this.togglePlay();
+      this.showWelcome();
+      // Auto-open the search
+      const searchWrap = document.getElementById('welcome-search-wrap');
+      if (searchWrap) {
+        searchWrap.classList.remove('hidden');
+        setTimeout(() => document.getElementById('welcome-search').focus(), 100);
+      }
+    });
 
     document.getElementById('play-btn').addEventListener('click', () => this.togglePlay());
     document.getElementById('auto-btn').addEventListener('click', () => this.toggleAuto());
     document.getElementById('pattern-label').addEventListener('click', () => this.cyclePattern());
+    document.getElementById('speed-down').addEventListener('click', () => this.adjustSpeed(-0.25));
+    document.getElementById('speed-up').addEventListener('click', () => this.adjustSpeed(0.25));
     const calBtn = document.getElementById('calibrate-btn');
     calBtn.addEventListener('click', () => this.startCalibration());
-    document.getElementById('upstrum-btn').addEventListener('click', () => {
-      this.upStrumEnabled = !this.upStrumEnabled;
-      const btn = document.getElementById('upstrum-btn');
-      btn.classList.toggle('active', this.upStrumEnabled);
-      btn.textContent = this.upStrumEnabled ? 'Up Strum On' : 'Up Strum';
-    });
     document.getElementById('tone-btn').addEventListener('click', () => this.cycleTone());
+    document.getElementById('metronome-btn').addEventListener('click', () => {
+      this.metronomeOn = !this.metronomeOn;
+      document.getElementById('metronome-btn').classList.toggle('active', this.metronomeOn);
+    });
 
     const calCanvas = document.getElementById('calibrate-canvas');
     calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
@@ -947,7 +1232,6 @@ class App {
     document.querySelectorAll('.color-swatch').forEach((s) => {
       s.addEventListener('click', () => {
         this.setGuitarColor(s.dataset.color);
-        this.completeStep(1);
       });
     });
 
@@ -957,12 +1241,112 @@ class App {
     this.setupCustomSongModal();
     this.initStepGuide();
 
+    // Settings panel toggle
+    document.getElementById('settings-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('settings-panel').classList.toggle('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#settings-group')) {
+        document.getElementById('settings-panel').classList.add('hidden');
+      }
+    });
+
+    // Auto-load a beginner-friendly default song
+    const defaultSong = this.songs.find(s => s.id === 'let-it-be');
+    if (defaultSong) {
+      this.selectSong(defaultSong);
+      document.getElementById('current-song-label').textContent = defaultSong.title;
+    }
+
+    // Welcome overlay buttons
+    document.getElementById('welcome-play').addEventListener('click', () => {
+      if (!this.calibrated) {
+        if (this.cameraAvailable) {
+          this.startCalibration();
+        } else {
+          this.useDefaultCalibration();
+          this.togglePlay();
+        }
+        return;
+      }
+      this.togglePlay();
+    });
+    document.getElementById('welcome-calibrate').addEventListener('click', () => {
+      this.startCalibration();
+    });
+    document.getElementById('welcome-pattern-btn').addEventListener('click', () => {
+      this.cyclePattern();
+      this.renderWelcomePattern();
+    });
+    document.getElementById('welcome-speed-down').addEventListener('click', () => this.adjustSpeed(-0.25));
+    document.getElementById('welcome-speed-up').addEventListener('click', () => this.adjustSpeed(0.25));
+
+    this.renderWelcomePattern();
+    this.setupWelcomeSearch();
+
+    // Skip calibration buttons (welcome overlay + calibrate overlay)
+    document.getElementById('welcome-skip-cal').addEventListener('click', () => {
+      this.useDefaultCalibration();
+    });
+    document.getElementById('calibrate-skip').addEventListener('click', () => {
+      this.useDefaultCalibration();
+      this.finishCalibration();
+    });
+    document.getElementById('calibrate-reset').addEventListener('click', () => {
+      this.resetCalibration();
+    });
+
+    // Keyboard strum: spacebar = down strum, shift+space = up strum
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        if (!this.playing || !this.currentBuffers) return;
+        const dir = e.shiftKey ? 'up' : 'down';
+        this.triggerAutoStrum(dir);
+        this.judgeStrum();
+      }
+    });
+
+    // Click-to-strum on guitar canvas
+    this.canvas.addEventListener('click', (e) => {
+      if (!this.playing || !this.currentBuffers || !this.layout) return;
+      const rect = this.canvas.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left);
+      const L = this.layout;
+      if (clickX >= L.bodyLeft && clickX <= L.bodyRight) {
+        this.triggerAutoStrum('down');
+        this.judgeStrum();
+      }
+    });
+
+    // Camera PIP: hide until calibrated
+    if (!this.cameraAvailable) {
+      document.getElementById('camera-pip').style.display = 'none';
+    }
+
+    // Help button pulse for first-time visitors
+    const helpBtn = document.getElementById('help-btn');
+    if (!localStorage.getItem('air-guitar-onboarded')) {
+      helpBtn.classList.add('pulse-hint');
+      setTimeout(() => helpBtn.classList.remove('pulse-hint'), 15000);
+    }
+
+    // Bottom bar idle label
+    this.updateIdleLabel();
+
     this.loop();
 
     this.onboarding = new Onboarding(this);
     if (this.onboarding.shouldShow()) {
       this.onboarding.start();
     }
+
+    // Help button re-triggers onboarding
+    helpBtn.addEventListener('click', () => {
+      this.onboarding.start();
+    });
   }
 
   resize() {
@@ -982,15 +1366,11 @@ class App {
   }
 
   initStepGuide() {
+    // Simplified: onboarding modal handles first-time users;
+    // calibration check in togglePlay gates the rest.
     this.stepsCompleted = new Set();
-    const GUIDE_KEY = 'air-guitar-guide-v2';
-    this.guideKey = GUIDE_KEY;
-    this.guideDone = localStorage.getItem(GUIDE_KEY) === 'true';
-    if (this.guideDone) {
-      document.getElementById('top-bar').classList.add('steps-done');
-    } else {
-      this.enforceStepState();
-    }
+    this.guideDone = true;
+    document.getElementById('top-bar').classList.add('steps-done');
   }
 
   enforceStepState() {
@@ -1064,6 +1444,7 @@ class App {
     this.setChord(song.progression[0].chord);
     this.updateProgressionDisplay(-1);
     this.completeStep(3);
+    this.updateWelcome();
   }
 
   setActivePattern(name) {
@@ -1072,11 +1453,13 @@ class App {
     this.activePatternName = resolved;
     const label = document.getElementById('pattern-label');
     if (label) label.textContent = 'Pattern: ' + STRUM_PATTERNS[resolved].label;
+    this.renderWelcomePattern();
   }
 
   cyclePattern() {
-    const idx = PATTERN_NAMES.indexOf(this.activePatternName);
-    const next = PATTERN_NAMES[(idx + 1) % PATTERN_NAMES.length];
+    const pool = GENERIC_PATTERNS.includes(this.activePatternName) ? GENERIC_PATTERNS : [this.activePatternName, ...GENERIC_PATTERNS];
+    const idx = pool.indexOf(this.activePatternName);
+    const next = pool[(idx + 1) % pool.length];
     this.setActivePattern(next);
     if (this.currentSong) {
       const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
@@ -1092,7 +1475,67 @@ class App {
     document.getElementById('tone-btn').textContent = 'Tone: ' + TONE_PRESETS[next].label;
   }
 
+  judgeStrum() {
+    if (!this.playing || this.autoMode) return;
+    const beat = this.timer.beatInChord;
+    const pat = STRUM_PATTERNS[this.activePatternName];
+    if (!pat) return;
+
+    let minDist = Infinity;
+    for (const s of pat.strums) {
+      minDist = Math.min(minDist, Math.abs(beat - s.beat));
+    }
+
+    let label, pts, color;
+    if (minDist < 0.25) { label = 'Perfect'; pts = 100; color = '#00ff88'; }
+    else if (minDist < 0.5) { label = 'Great'; pts = 50; color = '#00d4ff'; }
+    else if (minDist < 1.0) { label = 'Good'; pts = 20; color = '#ff9800'; }
+    else { label = 'Miss'; pts = 0; color = '#f44336'; }
+
+    if (pts > 0) {
+      this.streak++;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+      const mult = 1 + Math.floor(this.streak / 10) * 0.5;
+      this.score += Math.round(pts * mult);
+    } else {
+      this.streak = 0;
+    }
+
+    this.timingPopup = { label, color, time: performance.now() };
+    this.updateScoreDisplay();
+  }
+
+  updateScoreDisplay() {
+    const el = document.getElementById('score-display');
+    if (!el) return;
+    el.classList.remove('hidden');
+    document.getElementById('score-value').textContent = this.score.toLocaleString();
+    const streakEl = document.getElementById('streak-value');
+    streakEl.textContent = this.streak > 1 ? `${this.streak}x streak` : '';
+
+    // Show tooltip on first score appearance
+    if (!this.scoreTooltipShown) {
+      this.scoreTooltipShown = true;
+      const tooltip = document.getElementById('score-tooltip');
+      if (tooltip) {
+        tooltip.classList.remove('hidden');
+        setTimeout(() => tooltip.classList.add('hidden'), 4500);
+      }
+    }
+  }
+
+  resetScore() {
+    this.score = 0;
+    this.streak = 0;
+    this.bestStreak = 0;
+    this.timingPopup = null;
+    const el = document.getElementById('score-display');
+    if (el) el.classList.add('hidden');
+  }
+
   async fetchSongsterrChords(song) {
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (isLocal) return;
     try {
       const res = await fetch(`/api/chords?songsterrId=${song.songsterrId}`);
       if (!res.ok) return;
@@ -1114,96 +1557,6 @@ class App {
     this.audio.start();
     this.currentBuffers = this.audio.getBuffers(name, pos);
     document.getElementById('chord-name').textContent = name;
-  }
-
-  setupSongSearch() {
-    const input = document.getElementById('song-search');
-    const dropdown = document.getElementById('song-dropdown');
-    let searchTimeout = null;
-
-    const showDropdown = (items) => {
-      dropdown.innerHTML = '';
-      if (!items.length) {
-        dropdown.classList.add('hidden');
-        return;
-      }
-      for (const item of items) {
-        const div = document.createElement('div');
-        div.className = 'song-option';
-        div.innerHTML = `<span>${item.title}</span><span class="song-artist">${item.artist}</span>`;
-        div.addEventListener('click', () => {
-          input.value = `${item.title} — ${item.artist}`;
-          dropdown.classList.add('hidden');
-          this.selectSong(item);
-        });
-        dropdown.appendChild(div);
-      }
-      dropdown.classList.remove('hidden');
-    };
-
-    const searchLocal = (q) => {
-      const lower = q.toLowerCase();
-      return this.songs.filter(
-        (s) => s.title.toLowerCase().includes(lower) || s.artist.toLowerCase().includes(lower)
-      );
-    };
-
-    const searchAPI = async (q) => {
-      try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.songs || [];
-      } catch {
-        return [];
-      }
-    };
-
-    input.addEventListener('input', () => {
-      const q = input.value.trim();
-      if (!q) {
-        showDropdown(this.songs.slice(0, 10));
-        return;
-      }
-      const local = searchLocal(q);
-      showDropdown(local);
-
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(async () => {
-        if (local.length >= 3) return;
-        const hint = document.createElement('div');
-        hint.className = 'song-option searching';
-        hint.textContent = 'Searching online...';
-        dropdown.appendChild(hint);
-        dropdown.classList.remove('hidden');
-
-        const remote = await searchAPI(q);
-        if (remote.length) {
-          const merged = [...local];
-          const localIds = new Set(local.map((s) => s.id));
-          for (const r of remote) {
-            if (!localIds.has(r.id)) merged.push(r);
-          }
-          showDropdown(merged);
-        } else {
-          hint.remove();
-          if (!dropdown.children.length) dropdown.classList.add('hidden');
-        }
-      }, 400);
-    });
-
-    input.addEventListener('focus', () => {
-      const q = input.value.trim();
-      showDropdown(q ? searchLocal(q) : this.songs.slice(0, 10));
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.song-search-wrap')) {
-        dropdown.classList.add('hidden');
-      }
-    });
-
-    input.value = '';
   }
 
   loadCustomSongs() {
@@ -1253,7 +1606,7 @@ class App {
       this.songs.push(song);
       this.saveCustomSongs();
       this.selectSong(song);
-      document.getElementById('song-search').value = `${song.title} — Custom`;
+      document.getElementById('current-song-label').textContent = song.title;
       close();
 
       document.getElementById('cs-title').value = '';
@@ -1302,28 +1655,263 @@ class App {
     });
   }
 
+  updateWelcome() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (!overlay) return;
+
+    // Update song info
+    if (this.currentSong) {
+      const titleEl = document.querySelector('.welcome-song-title');
+      const artistEl = document.querySelector('.welcome-song-artist');
+      if (titleEl) titleEl.textContent = this.currentSong.title;
+      if (artistEl) artistEl.textContent = this.currentSong.artist;
+    }
+
+    // Update calibration step visual
+    const step1 = overlay.querySelector('.welcome-step:first-child');
+    if (step1) {
+      if (!this.cameraAvailable) {
+        // No camera: mark as done automatically, hide calibrate links
+        step1.classList.add('done');
+        step1.querySelector('.welcome-step-num').textContent = '';
+        const calLink = document.getElementById('welcome-calibrate');
+        const skipLink = document.getElementById('welcome-skip-cal');
+        if (calLink) calLink.style.display = 'none';
+        if (skipLink) skipLink.style.display = 'none';
+        const stepText = step1.querySelector('.welcome-step-text');
+        if (stepText) stepText.innerHTML = 'No camera needed<br><span class="welcome-kb-hint">Use <kbd>Space</kbd> or click to strum</span>';
+      } else {
+        step1.classList.toggle('done', this.calibrated);
+        if (this.calibrated) {
+          step1.querySelector('.welcome-step-num').textContent = '';
+        }
+      }
+    }
+  }
+
+  renderWelcomePattern() {
+    const pat = STRUM_PATTERNS[this.activePatternName];
+    if (!pat) return;
+    const nameEl = document.getElementById('welcome-pattern-name');
+    const slotsEl = document.getElementById('welcome-pattern-slots');
+    if (nameEl) nameEl.textContent = pat.label;
+    if (!slotsEl) return;
+
+    slotsEl.innerHTML = '';
+    const beatLabels = ['1', '&', '2', '&', '3', '&', '4', '&'];
+    pat.slots.forEach((slot, i) => {
+      const div = document.createElement('span');
+      div.className = 'pattern-slot';
+      const beat = document.createElement('span');
+      beat.className = 'pattern-slot-beat';
+      beat.textContent = beatLabels[i] || '';
+      const arrow = document.createElement('span');
+      arrow.className = 'pattern-slot-arrow';
+      if (slot === 'D') {
+        arrow.classList.add('down');
+        arrow.textContent = '\u25BC';
+      } else if (slot === 'U') {
+        arrow.classList.add('up');
+        arrow.textContent = '\u25B2';
+      } else {
+        arrow.classList.add('rest');
+        arrow.textContent = '\u2013';
+      }
+      div.appendChild(beat);
+      div.appendChild(arrow);
+      slotsEl.appendChild(div);
+    });
+  }
+
+  setupWelcomeSearch() {
+    const changeBtn = document.getElementById('welcome-change-song');
+    const searchWrap = document.getElementById('welcome-search-wrap');
+    const searchInput = document.getElementById('welcome-search');
+    const results = document.getElementById('welcome-search-results');
+    let searchTimeout = null;
+
+    changeBtn.addEventListener('click', () => {
+      searchWrap.classList.toggle('hidden');
+      if (!searchWrap.classList.contains('hidden')) {
+        searchInput.value = '';
+        searchInput.focus();
+        this.showWelcomeResults(this.songs.slice(0, 8), results);
+      }
+    });
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim();
+      if (!q) {
+        this.showWelcomeResults(this.songs.slice(0, 8), results);
+        return;
+      }
+      const lower = q.toLowerCase();
+      const local = this.songs.filter(
+        s => s.title.toLowerCase().includes(lower) || s.artist.toLowerCase().includes(lower)
+      );
+      this.showWelcomeResults(local, results);
+
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        if (local.length >= 3) return;
+        // Skip API search on localhost (no backend)
+        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        if (isLocal) return;
+
+        const hint = document.createElement('div');
+        hint.className = 'welcome-search-result searching';
+        hint.textContent = 'Searching online...';
+        results.appendChild(hint);
+
+        try {
+          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const remote = data.songs || [];
+            if (remote.length) {
+              const merged = [...local];
+              const localIds = new Set(local.map(s => s.id));
+              for (const r of remote) {
+                if (!localIds.has(r.id)) merged.push(r);
+              }
+              this.showWelcomeResults(merged, results);
+            } else {
+              hint.remove();
+            }
+          } else {
+            hint.remove();
+          }
+        } catch {
+          hint.remove();
+        }
+      }, 400);
+    });
+
+    searchInput.addEventListener('focus', () => {
+      const q = searchInput.value.trim();
+      if (!q) this.showWelcomeResults(this.songs.slice(0, 8), results);
+    });
+  }
+
+  showWelcomeResults(items, container) {
+    container.innerHTML = '';
+    for (const item of items) {
+      const div = document.createElement('div');
+      div.className = 'welcome-search-result';
+      const diff = songDifficulty(item);
+      div.innerHTML = `<span>${item.title}</span><span class="song-meta"><span class="diff-badge" style="background:${diff.color}">${diff.label}</span><span class="song-artist">${item.artist}</span></span>`;
+      div.addEventListener('click', () => {
+        this.selectSong(item);
+        document.getElementById('current-song-label').textContent = item.title;
+        document.getElementById('welcome-search-wrap').classList.add('hidden');
+      });
+      container.appendChild(div);
+    }
+  }
+
+  showWelcome() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (overlay) {
+      overlay.classList.remove('hidden');
+      this.updateWelcome();
+      this.renderWelcomePattern();
+    }
+  }
+
+  hideWelcome() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  adjustSpeed(delta) {
+    this.speedMultiplier = Math.round(Math.max(0.25, Math.min(2, this.speedMultiplier + delta)) * 100) / 100;
+    const text = this.speedMultiplier + 'x';
+    const label = document.getElementById('speed-label');
+    const welcomeLabel = document.getElementById('welcome-speed-label');
+    if (label) label.textContent = text;
+    if (welcomeLabel) welcomeLabel.textContent = text;
+    // Apply to running timer immediately
+    if (this.currentSong) {
+      this.timer.bpm = (this.currentSong.bpm || 120) * this.speedMultiplier;
+    }
+  }
+
+  useDefaultCalibration() {
+    // Set sensible default strum area (middle third of camera frame)
+    this.strumCamTop = 0.3;
+    this.strumCamBottom = 0.7;
+    this.calibrated = true;
+    this.updateWelcome();
+    this.showCameraPip();
+  }
+
+  resetCalibration() {
+    const canvas = document.getElementById('calibrate-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    this.calibrateStep = 0;
+    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+    document.getElementById('calibrate-reset').style.display = 'none';
+  }
+
+  updateIdleLabel() {
+    const labelEl = document.getElementById('section-label');
+    if (!this.playing && this.currentSong && labelEl) {
+      labelEl.innerHTML = '<span class="progression-label">Chord Progression</span>';
+    }
+  }
+
+  revealAdvancedControls() {
+    if (this.hasPlayedOnce) return;
+    this.hasPlayedOnce = true;
+    document.querySelectorAll('.bar-advanced').forEach(el => el.classList.remove('hidden'));
+  }
+
+  showCameraPip() {
+    const pip = document.getElementById('camera-pip');
+    if (this.cameraAvailable && this.calibrated) {
+      pip.classList.remove('pip-hidden');
+      pip.classList.add('pip-visible');
+    }
+  }
+
   togglePlay() {
     const btn = document.getElementById('play-btn');
     if (this.playing) {
       this.playing = false;
       this.timer.stop();
+      this.lastMetronomeBeat = -1;
       btn.textContent = 'Play';
       btn.classList.remove('active');
       if (this.autoMode) this.toggleAuto();
+      this.showWelcome();
+      this.updateIdleLabel();
     } else {
       if (!this.currentSong) return;
       if (!this.calibrated) {
-        this.promptCalibration();
+        if (this.cameraAvailable) {
+          this.startCalibration();
+        } else {
+          this.useDefaultCalibration();
+        }
         return;
       }
       this.playing = true;
       this.audio.start();
-      this.timer.start(this.currentSong.progression, this.currentSong.bpm, this.currentSong.sections);
+      this.resetScore();
+      this.lastMetronomeBeat = -1;
+      this.timer.start(this.currentSong.progression, (this.currentSong.bpm || 120) * this.speedMultiplier, this.currentSong.sections);
       this.timer.onFinish = () => this.onSongFinished();
       this.lastTimerIdx = -1;
       btn.textContent = 'Stop';
       btn.classList.add('active');
       this.completeStep(5);
+      this.hideWelcome();
+      this.revealAdvancedControls();
+      this.showCameraPip();
     }
   }
 
@@ -1336,24 +1924,21 @@ class App {
 
   toggleAuto() {
     const btn = document.getElementById('auto-btn');
-    const patBtn = document.getElementById('pattern-label');
     if (this.autoMode) {
       this.autoMode = false;
       this.autoPlayer.stop();
-      btn.textContent = 'Auto';
+      btn.textContent = 'Demo';
       btn.classList.remove('active');
-      patBtn.classList.add('hidden');
     } else {
       if (!this.currentSong) return;
+      // Demo doesn't need camera — use defaults if not calibrated
       if (!this.calibrated) {
-        this.promptCalibration();
-        return;
+        this.useDefaultCalibration();
       }
       this.autoMode = true;
       this.autoPlayer.start();
-      btn.textContent = 'Auto Off';
+      btn.textContent = 'Demo Off';
       btn.classList.add('active');
-      patBtn.classList.remove('hidden');
       if (!this.playing) this.togglePlay();
     }
   }
@@ -1418,6 +2003,7 @@ class App {
       ctx.fillText('Top', 8, pxY - 4);
       this.calibrateStep = 1;
       document.getElementById('calibrate-hint').textContent = 'Click the BOTTOM of your strum area';
+      document.getElementById('calibrate-reset').style.display = '';
     } else {
       this.strumCamBottom = Math.max(clickY, this.strumCamTop + 0.05);
 
@@ -1442,12 +2028,15 @@ class App {
 
   finishCalibration() {
     document.getElementById('calibrate-overlay').classList.add('hidden');
+    document.getElementById('calibrate-reset').style.display = 'none';
     const btn = document.getElementById('calibrate-btn');
     btn.classList.remove('active', 'needs-attention');
     this.calibrating = false;
     this.calibrateStep = 0;
     if (this.calibrated) {
       this.completeStep(2);
+      this.updateWelcome();
+      this.showCameraPip();
     }
   }
 
@@ -1533,7 +2122,7 @@ class App {
     this.handState.y = this.handState.y * SMOOTHING + rawY * (1 - SMOOTHING);
     this.handState.x = this.handState.x * SMOOTHING + clampedX * (1 - SMOOTHING);
 
-    if (!this.currentBuffers) return { x: this.handState.x, y: this.handState.y };
+    if (!this.currentBuffers || !this.playing) return { x: this.handState.x, y: this.handState.y };
 
     const prev = this.handState.prevY;
     const curr = this.handState.y;
@@ -1541,12 +2130,18 @@ class App {
     const speed = Math.abs(delta);
 
     const isDownStrum = delta > 0.5;
-    const isUpStrum = this.upStrumEnabled && delta < -0.5;
+    const inBothZone = this.handState.x >= (L.bodyLeft + L.bodyRight) / 2;
+    const isUpStrum = inBothZone && delta < -0.5;
 
     if (isDownStrum || isUpStrum) {
       const vel = Math.min(1, Math.max(0.25, speed / 10));
       const now = performance.now();
       const COOLDOWN = 80;
+
+      if (now - (this._lastJudgeTime || 0) > 200) {
+        this._lastJudgeTime = now;
+        this.judgeStrum();
+      }
 
       if (isDownStrum) {
         for (let s = 0; s < 6; s++) {
@@ -1610,6 +2205,14 @@ class App {
         this.updateProgressionDisplay(idx);
       }
       this.updateBeatDots(this.timer.currentBeat(), this.timer.currentBeatsTotal());
+
+      if (this.metronomeOn) {
+        const currentBeat = Math.floor(this.timer.beatInChord);
+        if (currentBeat !== this.lastMetronomeBeat) {
+          this.lastMetronomeBeat = currentBeat;
+          this.audio.playClick(currentBeat === 0);
+        }
+      }
 
       if (this.autoMode) {
         this.autoPlayer.check(this.timer.beatInChord, this.timer.idx);
@@ -1678,23 +2281,49 @@ class App {
     if (this.autoStrum.active) {
       const elapsed = performance.now() - this.autoStrum.startTime;
       const t = Math.min(1, elapsed / this.autoStrum.duration);
-      const midX = (L.bodyLeft + L.bodyRight) / 2;
+      // Auto-strum cursor plays in the Down+Up zone (right half)
+      const autoX = (L.bodyMidX + L.bodyRight) / 2;
       let cursorY;
       if (this.autoStrum.direction === 'down') {
         cursorY = L.stringYs[0] + t * (L.stringYs[5] - L.stringYs[0]);
       } else {
         cursorY = L.stringYs[5] - t * (L.stringYs[5] - L.stringYs[0]);
       }
-      cursor = { x: midX, y: cursorY };
+      cursor = { x: autoX, y: cursorY };
       if (t >= 1) this.autoStrum.active = false;
     }
 
-    if (!this.autoMode) {
+    if (!this.autoMode && this.cameraAvailable) {
       const hand = this.tracker.detect();
       if (hand) {
         cursor = this.processStrum(hand);
       } else {
         this.handState.active = false;
+      }
+    }
+
+    if (this.timingPopup) {
+      const age = performance.now() - this.timingPopup.time;
+      if (age < 600) {
+        const t = age / 600;
+        c.save();
+        c.globalAlpha = 1 - t;
+        c.font = `bold ${Math.round(28 + t * 8)}px Inter, sans-serif`;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillStyle = this.timingPopup.color;
+        c.shadowColor = this.timingPopup.color;
+        c.shadowBlur = 12;
+        const popX = (L.bodyLeft + L.bodyRight) / 2;
+        const popY = L.stringYs[2] - 30 - t * 20;
+        c.fillText(this.timingPopup.label, popX, popY);
+        if (this.streak > 1) {
+          c.font = `600 ${Math.round(16 + t * 4)}px Inter, sans-serif`;
+          c.fillText(`${this.streak}x`, popX, popY + 30);
+        }
+        c.restore();
+      } else {
+        this.timingPopup = null;
       }
     }
 
@@ -1865,6 +2494,7 @@ class Onboarding {
         ctx.fillText('Bottom', 8, pxY + 4);
         this.calStep = 2;
         hint.textContent = 'Calibrated!';
+        this.app.calibrated = true;
 
         const nextBtn = this.cards[2].querySelector('[data-action="next"]');
         nextBtn.disabled = false;
