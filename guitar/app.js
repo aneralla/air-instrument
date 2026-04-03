@@ -2277,6 +2277,9 @@ class App {
       this.autoPlayer.stop();
       btn.textContent = 'Demo';
       btn.classList.remove('active');
+      // Also stop the song — no sound source without demo or manual strum
+      if (this.playing) await this.togglePlay();
+      return;
     } else {
       if (!this.currentSong) return;
       // Demo doesn't need camera — use defaults if not calibrated
