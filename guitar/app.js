@@ -1466,21 +1466,21 @@ class App {
         btn.textContent = 'More options';
       }
     });
-    document.getElementById('welcome-calibrate').addEventListener('click', () => {
+    document.getElementById('welcome-calibrate')?.addEventListener('click', () => {
       this.startCalibration();
     });
-    document.getElementById('welcome-pattern-btn').addEventListener('click', () => {
+    document.getElementById('welcome-pattern-btn')?.addEventListener('click', () => {
       this.cyclePattern();
       this.renderWelcomePattern();
     });
-    document.getElementById('welcome-speed-down').addEventListener('click', () => this.adjustSpeed(-0.25));
-    document.getElementById('welcome-speed-up').addEventListener('click', () => this.adjustSpeed(0.25));
+    document.getElementById('welcome-speed-down')?.addEventListener('click', () => this.adjustSpeed(-0.25));
+    document.getElementById('welcome-speed-up')?.addEventListener('click', () => this.adjustSpeed(0.25));
 
     this.renderWelcomePattern();
     this.setupWelcomeSearch();
 
     // Skip calibration buttons (welcome overlay + calibrate overlay)
-    document.getElementById('welcome-skip-cal').addEventListener('click', () => {
+    document.getElementById('welcome-skip-cal')?.addEventListener('click', () => {
       this.useDefaultCalibration();
     });
     document.getElementById('calibrate-skip').addEventListener('click', () => {
@@ -2263,14 +2263,14 @@ class App {
     }
   }
 
-  onSongFinished() {
-    if (this.autoMode) this.toggleAuto();
-    if (this.playing) this.togglePlay();
+  async onSongFinished() {
+    if (this.autoMode) await this.toggleAuto();
+    if (this.playing) await this.togglePlay();
     const el = document.getElementById('section-label');
     if (el) el.textContent = 'Finished!';
   }
 
-  toggleAuto() {
+  async toggleAuto() {
     const btn = document.getElementById('auto-btn');
     if (this.autoMode) {
       this.autoMode = false;
@@ -2287,7 +2287,7 @@ class App {
       this.autoPlayer.start();
       btn.textContent = 'Demo Off';
       btn.classList.add('active');
-      if (!this.playing) this.togglePlay();
+      if (!this.playing) await this.togglePlay();
     }
   }
 
@@ -2313,7 +2313,7 @@ class App {
       btn.textContent = 'Demo Off';
       btn.classList.add('active');
     }
-    if (!this.playing) this.togglePlay();
+    if (!this.playing) await this.togglePlay();
   }
 
   promptCalibration() {
