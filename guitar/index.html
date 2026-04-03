@@ -14,7 +14,7 @@
     <div id="loading">
       <div class="loader-ring"></div>
       <p class="loader-title">Air Guitar</p>
-      <p class="loader-subtitle">Loading chord database and hand tracking...</p>
+      <p class="loader-subtitle">Tuning your guitar...</p>
     </div>
 
     <div id="main" class="hidden">
@@ -127,6 +127,7 @@
                   <span class="meta-badge hidden" id="welcome-capo">Capo 1</span>
                 </div>
               </div>
+              <span id="welcome-difficulty" class="welcome-difficulty-badge">Perfect for beginners</span>
               <button id="welcome-change-song" class="welcome-change-song">Change song</button>
               <a id="welcome-youtube" class="welcome-youtube-link hidden" target="_blank" rel="noopener">&#9654; Listen on YouTube</a>
               <div id="welcome-search-wrap" class="welcome-search-wrap hidden">
@@ -134,51 +135,57 @@
                 <div id="welcome-search-results" class="welcome-search-results"></div>
               </div>
             </div>
-            <div class="welcome-steps">
-              <div class="welcome-step">
-                <div class="welcome-step-num">1</div>
-                <div class="welcome-step-text">Set up your camera<br><button id="welcome-calibrate" class="welcome-link">Calibrate strum area</button><br><button id="welcome-skip-cal" class="welcome-skip-link">or skip — use defaults</button></div>
-              </div>
-              <div class="welcome-step-arrow">&rarr;</div>
-              <div class="welcome-step">
-                <div class="welcome-step-num">2</div>
-                <div class="welcome-step-text">Hit play and<br>strum with your hand<br><span class="welcome-kb-hint">or press <kbd>Space</kbd> to strum</span></div>
-              </div>
+            <div class="welcome-actions">
+              <button id="welcome-play" class="welcome-play-btn">&#9654; Start Playing</button>
+              <button id="welcome-demo" class="welcome-demo-btn">&#9835; Watch &amp; Listen First</button>
             </div>
-            <div class="welcome-zones">
-              <span class="welcome-pattern-label">Strum Zones</span>
-              <div class="zone-diagram">
-                <div class="zone-half zone-down">
-                  <span class="zone-arrow">&#9660;</span>
-                  <span class="zone-label">Down only</span>
-                </div>
-                <div class="zone-divider"></div>
-                <div class="zone-half zone-both">
-                  <span class="zone-arrow">&#9660;&#9650;</span>
-                  <span class="zone-label">Down + Up</span>
-                </div>
-              </div>
-              <span class="zone-hint">Move your hand left or right on the guitar body to switch</span>
-            </div>
+            <p class="welcome-hint">Wave your hand or press <kbd>Space</kbd> to strum</p>
 
-            <div class="welcome-pattern" id="welcome-pattern">
-              <span class="welcome-pattern-label">Strum Pattern</span>
-              <button id="welcome-pattern-btn" class="welcome-pattern-display" title="Click to change pattern">
-                <span id="welcome-pattern-name">Pop</span>
-                <span id="welcome-pattern-slots" class="pattern-slots"></span>
-                <span class="welcome-pattern-change">change</span>
-              </button>
-            </div>
-            <div class="welcome-speed">
-              <span class="welcome-pattern-label">Speed</span>
-              <div class="welcome-speed-row">
-                <button id="welcome-speed-down" class="speed-btn" title="Slower">−</button>
-                <span id="welcome-speed-label" class="welcome-speed-value">1x</span>
-                <button id="welcome-speed-up" class="speed-btn" title="Faster">+</button>
+            <div class="welcome-advanced hidden" id="welcome-advanced">
+              <div class="welcome-steps">
+                <div class="welcome-step">
+                  <div class="welcome-step-num">1</div>
+                  <div class="welcome-step-text">Set up your camera<br><button id="welcome-calibrate" class="welcome-link">Calibrate strum area</button><br><button id="welcome-skip-cal" class="welcome-skip-link">or skip — use defaults</button></div>
+                </div>
+                <div class="welcome-step-arrow">&rarr;</div>
+                <div class="welcome-step">
+                  <div class="welcome-step-num">2</div>
+                  <div class="welcome-step-text">Strum with your hand<br><span class="welcome-kb-hint">or press <kbd>Space</kbd></span></div>
+                </div>
+              </div>
+              <div class="welcome-zones">
+                <span class="welcome-pattern-label">Strum Zones</span>
+                <div class="zone-diagram">
+                  <div class="zone-half zone-down">
+                    <span class="zone-arrow">&#9660;</span>
+                    <span class="zone-label">Down only</span>
+                  </div>
+                  <div class="zone-divider"></div>
+                  <div class="zone-half zone-both">
+                    <span class="zone-arrow">&#9660;&#9650;</span>
+                    <span class="zone-label">Down + Up</span>
+                  </div>
+                </div>
+                <span class="zone-hint">Move your hand left or right on the guitar body to switch</span>
+              </div>
+              <div class="welcome-pattern" id="welcome-pattern">
+                <span class="welcome-pattern-label">Strum Pattern</span>
+                <button id="welcome-pattern-btn" class="welcome-pattern-display" title="Click to change pattern">
+                  <span id="welcome-pattern-name">Pop</span>
+                  <span id="welcome-pattern-slots" class="pattern-slots"></span>
+                  <span class="welcome-pattern-change">change</span>
+                </button>
+              </div>
+              <div class="welcome-speed">
+                <span class="welcome-pattern-label">Speed</span>
+                <div class="welcome-speed-row">
+                  <button id="welcome-speed-down" class="speed-btn" title="Slower">−</button>
+                  <span id="welcome-speed-label" class="welcome-speed-value">1x</span>
+                  <button id="welcome-speed-up" class="speed-btn" title="Faster">+</button>
+                </div>
               </div>
             </div>
-            <button id="welcome-play" class="welcome-play-btn">&#9654; Play</button>
-            <p class="welcome-hint">Or click <strong>Demo</strong> above to watch it play itself</p>
+            <button id="welcome-more-options" class="welcome-more-link">More options</button>
           </div>
         </div>
       </div>
@@ -193,58 +200,6 @@
         </div>
       </div>
 
-      <div id="onboarding" class="hidden">
-        <div class="ob-card" data-step="0">
-          <h2>Welcome to Air Guitar</h2>
-          <p>Play guitar with your webcam. We'll walk you through setup in 30 seconds.</p>
-          <button class="ob-primary" data-action="next">Get Started</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="1">
-          <h2>Camera Access</h2>
-          <p>We use your camera to track your hand movement. Your camera feed is shown below.</p>
-          <div class="ob-camera-preview">
-            <video id="ob-camera-preview" autoplay playsinline muted></video>
-          </div>
-          <p class="ob-small">Camera is ready!</p>
-          <button class="ob-primary" data-action="next">Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card ob-card-wide" data-step="2">
-          <h2>Set Your Strum Area</h2>
-          <p>Click the <strong>top</strong> of where you'll strum, then click the <strong>bottom</strong>. This maps your hand movement to the guitar strings.</p>
-          <div class="ob-calibrate-area">
-            <video id="ob-cal-video" autoplay playsinline muted></video>
-            <canvas id="ob-cal-canvas"></canvas>
-            <div id="ob-cal-hint">Click the TOP of your strum area</div>
-          </div>
-          <button class="ob-primary" data-action="next" disabled>Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="3">
-          <h2>How to Play</h2>
-          <ul class="ob-tips">
-            <li>Pick a song from the dropdown at the top</li>
-            <li>Click <strong>Play</strong> &mdash; chords advance automatically</li>
-            <li>Sweep your hand down across the strum area to play</li>
-            <li>Move to the <strong>right zone</strong> to strum both down and up</li>
-            <li>Click <strong>Demo</strong> to hear the song play itself</li>
-          </ul>
-          <button class="ob-primary" data-action="next">Next</button>
-          <button class="ob-skip" data-action="skip">Skip</button>
-        </div>
-
-        <div class="ob-card" data-step="4">
-          <h2>You're Ready!</h2>
-          <p>Start playing. You can recalibrate anytime with the <strong>Calibrate</strong> button in the top bar.</p>
-          <button class="ob-primary" data-action="done">Start Playing</button>
-        </div>
-
-        <div class="ob-dots" id="ob-dots"></div>
-      </div>
 
       <div id="custom-song-modal" class="hidden">
         <div class="modal-backdrop"></div>

@@ -1359,15 +1359,9 @@ class App {
       this.songs = songsRes;
       this.guitarImg = img;
 
-      // Camera + hand tracking are optional — app works with keyboard fallback
-      try {
-        await this.tracker.init();
-        await this.tracker.startCamera();
-        this.cameraAvailable = true;
-      } catch (camErr) {
-        console.warn('Camera unavailable, using keyboard/mouse fallback:', camErr.message);
-        this.cameraAvailable = false;
-      }
+      // Camera is deferred — not requested until user clicks Play or Calibrate
+      this.cameraAvailable = false;
+      this.cameraInitialized = false;
     } catch (err) {
       document.getElementById('loading').innerHTML =
         `<p class="error-message">Could not load</p>` +
@@ -1450,16 +1444,27 @@ class App {
 
     // Welcome overlay buttons
     document.getElementById('welcome-play').addEventListener('click', () => {
+      // Play a preview strum for instant gratification, then start
+      this.playPreviewStrum();
       if (!this.calibrated) {
-        if (this.cameraAvailable) {
-          this.startCalibration();
-        } else {
-          this.useDefaultCalibration();
-          this.togglePlay();
-        }
-        return;
+        this.useDefaultCalibration();
       }
       this.togglePlay();
+    });
+    document.getElementById('welcome-demo').addEventListener('click', () => {
+      this.playPreviewStrum();
+      this.toggleAuto();
+    });
+    document.getElementById('welcome-more-options').addEventListener('click', () => {
+      const adv = document.getElementById('welcome-advanced');
+      const btn = document.getElementById('welcome-more-options');
+      if (adv.classList.contains('hidden')) {
+        adv.classList.remove('hidden');
+        btn.textContent = 'Fewer options';
+      } else {
+        adv.classList.add('hidden');
+        btn.textContent = 'More options';
+      }
     });
     document.getElementById('welcome-calibrate').addEventListener('click', () => {
       this.startCalibration();
@@ -1510,31 +1515,20 @@ class App {
       }
     });
 
-    // Camera PIP: hide until calibrated
-    if (!this.cameraAvailable) {
-      document.getElementById('camera-pip').style.display = 'none';
-    }
+    // Camera PIP: hidden by default (deferred until user action)
+    document.getElementById('camera-pip').style.display = 'none';
 
-    // Help button pulse for first-time visitors
     const helpBtn = document.getElementById('help-btn');
-    if (!localStorage.getItem('air-guitar-onboarded')) {
-      helpBtn.classList.add('pulse-hint');
-      setTimeout(() => helpBtn.classList.remove('pulse-hint'), 15000);
-    }
 
     // Bottom bar idle label
     this.updateIdleLabel();
 
     this.loop();
 
-    this.onboarding = new Onboarding(this);
-    if (this.onboarding.shouldShow()) {
-      this.onboarding.start();
-    }
-
-    // Help button re-triggers onboarding
+    // Help button shows the welcome overlay
     helpBtn.addEventListener('click', () => {
-      this.onboarding.start();
+      if (this.playing) this.togglePlay();
+      this.showWelcome();
     });
   }
 
@@ -1555,7 +1549,7 @@ class App {
   }
 
   initStepGuide() {
-    // Simplified: onboarding modal handles first-time users;
+    // Welcome overlay handles first-time users;
     // calibration check in togglePlay gates the rest.
     this.stepsCompleted = new Set();
     this.guideDone = true;
@@ -1880,6 +1874,20 @@ class App {
           ytEl.classList.add('hidden');
         }
       }
+
+      // Update difficulty badge
+      const diffEl = document.getElementById('welcome-difficulty');
+      if (diffEl) {
+        const diff = songDifficulty(this.currentSong);
+        const labels = { 1: 'Perfect for beginners', 2: 'Intermediate', 3: 'Advanced' };
+        diffEl.textContent = labels[diff.level] || diff.label;
+        diffEl.style.background = diff.level === 1 ? 'rgba(0, 255, 136, 0.12)' :
+          diff.level === 2 ? 'rgba(255, 152, 0, 0.12)' : 'rgba(244, 67, 54, 0.12)';
+        diffEl.style.color = diff.level === 1 ? 'var(--green)' :
+          diff.level === 2 ? '#ff9800' : 'var(--red)';
+        diffEl.style.borderColor = diff.level === 1 ? 'rgba(0, 255, 136, 0.25)' :
+          diff.level === 2 ? 'rgba(255, 152, 0, 0.25)' : 'rgba(244, 67, 54, 0.25)';
+      }
     }
 
     // Update calibration step visual
@@ -2039,6 +2047,16 @@ class App {
     if (overlay) overlay.classList.add('hidden');
   }
 
+  playPreviewStrum() {
+    if (!this.currentBuffers || !this.audio) return;
+    try {
+      this.audio.start();
+      for (let s = 0; s < 6; s++) {
+        this.audio.playString(this.currentBuffers, s, 0.5, s * 15);
+      }
+    } catch { /* ignore — audio context may need user gesture */ }
+  }
+
   adjustSpeed(delta) {
     this.speedMultiplier = Math.round(Math.max(0.25, Math.min(2, this.speedMultiplier + delta)) * 100) / 100;
     const text = this.speedMultiplier + 'x';
@@ -2146,6 +2164,23 @@ class App {
     });
   }
 
+  async ensureCamera() {
+    if (this.cameraInitialized) return this.cameraAvailable;
+    this.cameraInitialized = true;
+    try {
+      await this.tracker.init();
+      await this.tracker.startCamera();
+      this.cameraAvailable = true;
+    } catch (err) {
+      console.warn('Camera unavailable, using keyboard/mouse fallback:', err.message);
+      this.cameraAvailable = false;
+    }
+    if (!this.cameraAvailable) {
+      document.getElementById('camera-pip').style.display = 'none';
+    }
+    return this.cameraAvailable;
+  }
+
   useDefaultCalibration() {
     // Set sensible default strum area (middle third of camera frame)
     this.strumCamTop = 0.3;
@@ -2183,12 +2218,13 @@ class App {
   showCameraPip() {
     const pip = document.getElementById('camera-pip');
     if (this.cameraAvailable && this.calibrated) {
+      pip.style.display = '';
       pip.classList.remove('pip-hidden');
       pip.classList.add('pip-visible');
     }
   }
 
-  togglePlay() {
+  async togglePlay() {
     const btn = document.getElementById('play-btn');
     if (this.playing) {
       this.playing = false;
@@ -2204,7 +2240,9 @@ class App {
     } else {
       if (!this.currentSong) return;
       if (!this.calibrated) {
-        if (this.cameraAvailable) {
+        // Lazily request camera on first play
+        const hasCam = await this.ensureCamera();
+        if (hasCam) {
           this.startCalibration();
         } else {
           this.useDefaultCalibration();
@@ -2285,7 +2323,13 @@ class App {
     setTimeout(() => { btn.style.transform = ''; }, 400);
   }
 
-  startCalibration() {
+  async startCalibration() {
+    const hasCam = await this.ensureCamera();
+    if (!hasCam) {
+      this.useDefaultCalibration();
+      return;
+    }
+
     const overlay = document.getElementById('calibrate-overlay');
     const calVideo = document.getElementById('calibrate-video');
     const calCanvas = document.getElementById('calibrate-canvas');
@@ -2712,176 +2756,6 @@ class App {
   }
 }
 
-// ── Onboarding ──────────────────────────────────────────────
-
-class Onboarding {
-  constructor(app) {
-    this.app = app;
-    this.step = 0;
-    this.totalSteps = 5;
-    this.overlay = document.getElementById('onboarding');
-    this.cards = this.overlay.querySelectorAll('.ob-card');
-    this.dotsContainer = document.getElementById('ob-dots');
-    this.calStep = 0;
-
-    this.buildDots();
-    this.bindButtons();
-    this.bindCalibration();
-  }
-
-  shouldShow() {
-    return !localStorage.getItem('air-guitar-onboarded');
-  }
-
-  start() {
-    this.step = 0;
-    this.overlay.classList.remove('hidden');
-    this.showStep(0);
-  }
-
-  buildDots() {
-    this.dotsContainer.innerHTML = '';
-    for (let i = 0; i < this.totalSteps; i++) {
-      const dot = document.createElement('span');
-      dot.className = 'ob-dot';
-      this.dotsContainer.appendChild(dot);
-    }
-  }
-
-  updateDots() {
-    const dots = this.dotsContainer.querySelectorAll('.ob-dot');
-    dots.forEach((d, i) => {
-      d.classList.toggle('active', i === this.step);
-      d.classList.toggle('done', i < this.step);
-    });
-  }
-
-  showStep(idx) {
-    this.step = idx;
-    this.cards.forEach((c) => c.classList.remove('active'));
-    const card = this.cards[idx];
-    if (card) {
-      card.classList.add('active');
-      card.style.animation = 'none';
-      card.offsetHeight;
-      card.style.animation = '';
-    }
-    this.updateDots();
-
-    if (idx === 1) this.setupCameraPreview();
-    if (idx === 2) this.setupCalibration();
-  }
-
-  bindButtons() {
-    this.overlay.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      const action = btn.dataset.action;
-      if (action === 'next') this.next();
-      else if (action === 'skip') this.finish();
-      else if (action === 'done') this.finish();
-    });
-  }
-
-  next() {
-    if (this.step < this.totalSteps - 1) {
-      this.showStep(this.step + 1);
-    } else {
-      this.finish();
-    }
-  }
-
-  finish() {
-    this.overlay.classList.add('hidden');
-    localStorage.setItem('air-guitar-onboarded', '1');
-  }
-
-  setupCameraPreview() {
-    const video = document.getElementById('ob-camera-preview');
-    if (this.app.tracker && this.app.tracker.video.srcObject) {
-      video.srcObject = this.app.tracker.video.srcObject;
-    }
-  }
-
-  setupCalibration() {
-    const video = document.getElementById('ob-cal-video');
-    const canvas = document.getElementById('ob-cal-canvas');
-    const hint = document.getElementById('ob-cal-hint');
-
-    if (this.app.tracker && this.app.tracker.video.srcObject) {
-      video.srcObject = this.app.tracker.video.srcObject;
-    }
-
-    const rect = canvas.parentElement.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
-
-    this.calStep = 0;
-    hint.textContent = 'Click the TOP of your strum area';
-
-    const nextBtn = this.cards[2].querySelector('[data-action="next"]');
-    nextBtn.disabled = true;
-  }
-
-  bindCalibration() {
-    const canvas = document.getElementById('ob-cal-canvas');
-    canvas.addEventListener('click', (e) => {
-      if (this.step !== 2) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const clickY = (e.clientY - rect.top) / rect.height;
-      const pxY = e.clientY - rect.top;
-      const hint = document.getElementById('ob-cal-hint');
-
-      const dpr = window.devicePixelRatio || 1;
-      const ctx = canvas.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      if (this.calStep === 0) {
-        this.app.strumCamTop = clickY;
-        ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, pxY);
-        ctx.lineTo(rect.width, pxY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
-        ctx.font = '12px Inter, sans-serif';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('Top', 8, pxY - 4);
-        this.calStep = 1;
-        hint.textContent = 'Click the BOTTOM of your strum area';
-      } else if (this.calStep === 1) {
-        this.app.strumCamBottom = Math.max(clickY, this.app.strumCamTop + 0.05);
-        ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, pxY);
-        ctx.lineTo(rect.width, pxY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
-        ctx.font = '12px Inter, sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Bottom', 8, pxY + 4);
-        this.calStep = 2;
-        hint.textContent = 'Calibrated!';
-        this.app.calibrated = true;
-
-        const nextBtn = this.cards[2].querySelector('[data-action="next"]');
-        nextBtn.disabled = false;
-      }
-    });
-  }
-}
+// ── Onboarding removed — welcome overlay handles everything ─
 
 const app = new App();
