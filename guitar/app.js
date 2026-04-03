@@ -1443,17 +1443,21 @@ class App {
     }
 
     // Welcome overlay buttons
-    document.getElementById('welcome-play').addEventListener('click', () => {
+    document.getElementById('welcome-play').addEventListener('click', async () => {
       // Play a preview strum for instant gratification, then start
       this.playPreviewStrum();
       if (!this.calibrated) {
         this.useDefaultCalibration();
       }
-      this.togglePlay();
+      await this.togglePlay();
+      // Start camera in background for hand tracking (non-blocking)
+      this.ensureCamera().then(hasCam => {
+        if (hasCam) this.showCameraPip();
+      });
     });
-    document.getElementById('welcome-demo').addEventListener('click', () => {
+    document.getElementById('welcome-demo').addEventListener('click', async () => {
       this.playPreviewStrum();
-      this.toggleAuto();
+      await this.toggleAuto();
     });
     document.getElementById('welcome-more-options').addEventListener('click', () => {
       const adv = document.getElementById('welcome-advanced');
