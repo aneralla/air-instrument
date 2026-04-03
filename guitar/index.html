@@ -82,7 +82,13 @@
               <span class="settings-label">Rhythm</span>
               <div class="settings-row">
                 <button id="pattern-label" class="bar-btn" title="Cycle strumming patterns">Pattern: Pop</button>
-                <button id="metronome-btn" class="bar-btn" title="Toggle metronome click">Metronome</button>
+                <button id="metronome-btn" class="bar-btn active" title="Pattern rhythm guide">Rhythm</button>
+              </div>
+            </div>
+            <div class="settings-section">
+              <span class="settings-label">Practice</span>
+              <div class="settings-row">
+                <button id="loop-btn" class="bar-btn" title="Loop the song continuously">Loop</button>
               </div>
             </div>
           </div>
@@ -105,14 +111,24 @@
           <button id="calibrate-skip" class="calibrate-skip-btn">Skip — use defaults</button>
         </div>
 
+        <div id="lyrics-overlay" class="hidden">
+          <div id="lyrics-content"></div>
+        </div>
+
         <div id="welcome-overlay">
           <div class="welcome-content">
             <div class="welcome-song-picker" id="welcome-song-picker">
               <div class="welcome-song" id="welcome-song">
                 <span class="welcome-song-title">Let It Be</span>
                 <span class="welcome-song-artist">The Beatles</span>
+                <div class="welcome-song-meta" id="welcome-song-meta">
+                  <span class="meta-badge" id="welcome-bpm">72 BPM</span>
+                  <span class="meta-badge" id="welcome-key">Key: C</span>
+                  <span class="meta-badge hidden" id="welcome-capo">Capo 1</span>
+                </div>
               </div>
               <button id="welcome-change-song" class="welcome-change-song">Change song</button>
+              <a id="welcome-youtube" class="welcome-youtube-link hidden" target="_blank" rel="noopener">&#9654; Listen on YouTube</a>
               <div id="welcome-search-wrap" class="welcome-search-wrap hidden">
                 <input id="welcome-search" type="text" placeholder="Search thousands of songs..." autocomplete="off">
                 <div id="welcome-search-results" class="welcome-search-results"></div>

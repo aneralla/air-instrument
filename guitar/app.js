@@ -218,6 +218,28 @@ class GuitarAudio {
     osc.start(this.ctx.currentTime);
     osc.stop(this.ctx.currentTime + 0.04);
   }
+
+  playChuck(isDown = true) {
+    if (!this.ctx) return;
+    const bufLen = Math.floor(this.ctx.sampleRate * 0.035);
+    const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.006));
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = isDown ? 800 : 1200;
+    filter.Q.value = 2;
+    const g = this.ctx.createGain();
+    g.gain.value = isDown ? 0.10 : 0.07;
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(this.ctx.destination);
+    src.start(this.ctx.currentTime);
+  }
 }
 
 // ── Hand tracker ────────────────────────────────────────────
@@ -697,126 +719,221 @@ function drawStrumOverlay(ctx, layout, stringStates, mutedStrings, cursor) {
   }
 }
 
+// ── Strum direction guide (large arrows on guitar body) ─────
+
+function drawStrumGuide(ctx, layout, patternName, beatInChord, totalBeats) {
+  const pat = STRUM_PATTERNS[patternName];
+  if (!pat || beatInChord < 0) return;
+  const { stringYs, bodyLeft, bodyRight } = layout;
+  const zoneTop = stringYs[0] - 10;
+  const zoneBot = stringYs[5] + 10;
+  const zoneMid = (zoneTop + zoneBot) / 2;
+  const zoneH = zoneBot - zoneTop;
+  const cx = (bodyLeft + bodyRight) / 2;
+
+  const patternBeats = pat.slots.length / 2;
+  const moduloBeat = beatInChord % patternBeats;
+
+  for (const s of pat.strums) {
+    if (s.beat >= patternBeats) continue;
+    const diff = moduloBeat - s.beat;
+    // Handle wrap-around: if moduloBeat is near 0 and strum is near end
+    const wrapDiff = diff < -patternBeats / 2 ? diff + patternBeats : diff;
+    if (wrapDiff >= -0.15 && wrapDiff < 0.5) {
+      const t = wrapDiff < 0 ? 0 : wrapDiff / 0.5;
+      const alpha = wrapDiff < 0 ? 0.4 : Math.max(0, 0.85 - t);
+      const scale = 1 - t * 0.3;
+      const isDown = s.dir === 'down';
+
+      const arrowH = zoneH * 0.35 * scale;
+      const arrowW = arrowH * 0.5;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = isDown ? '#00d4ff' : '#00ff88';
+      ctx.shadowColor = isDown ? '#00d4ff' : '#00ff88';
+      ctx.shadowBlur = 12 * alpha;
+
+      ctx.beginPath();
+      if (isDown) {
+        ctx.moveTo(cx, zoneMid + arrowH / 2);
+        ctx.lineTo(cx - arrowW, zoneMid - arrowH / 2);
+        ctx.lineTo(cx + arrowW, zoneMid - arrowH / 2);
+      } else {
+        ctx.moveTo(cx, zoneMid - arrowH / 2);
+        ctx.lineTo(cx - arrowW, zoneMid + arrowH / 2);
+        ctx.lineTo(cx + arrowW, zoneMid + arrowH / 2);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Direction label
+      ctx.shadowBlur = 0;
+      ctx.font = `bold ${Math.round(14 * scale)}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const labelY = isDown ? zoneMid - arrowH / 2 - 12 : zoneMid + arrowH / 2 + 12;
+      ctx.fillText(isDown ? 'DOWN' : 'UP', cx, labelY);
+
+      ctx.restore();
+    }
+  }
+}
+
 // ── Progression timer ───────────────────────────────────────
 
 class ProgressionTimer {
   constructor() {
-    this.progression = [];
+    this.song = null;
     this.bpm = 100;
     this.startTime = 0;
     this.running = false;
     this.finished = false;
-    this.idx = 0;
+    this.segments = [];
+    this.segIdx = 0;
     this.beatInChord = 0;
-
-    this.sections = null;
     this.sectionIdx = 0;
     this.sectionRepeat = 0;
+    this.looping = false;
     this.loopCount = 0;
+    this.loopMode = false;
     this.onFinish = null;
   }
 
-  start(progression, bpm, sections) {
-    this.progression = progression;
-    this.bpm = bpm;
+  get idx() { return this.segIdx; }
+
+  start(song, bpmOverride) {
+    this.song = song;
+    let baseBpm = bpmOverride || song.bpm || 120;
+    // Compound meters (x/8): BPM refers to dotted-quarter notes.
+    // Convert to eighth-note BPM since beat counts are in eighth notes.
+    const ts = song.timeSignature || [4, 4];
+    if (ts[1] === 8) baseBpm = baseBpm * 3;
+    this.bpm = baseBpm;
     this.startTime = performance.now();
     this.running = true;
     this.finished = false;
-    this.idx = 0;
+    this.segIdx = 0;
     this.beatInChord = 0;
-    this.loopCount = 0;
-
-    this.sections = sections && sections.length ? sections : null;
     this.sectionIdx = 0;
     this.sectionRepeat = 0;
+    this.loopCount = 0;
+    this.segments = [];
+
+    const sections = song.sections;
+    if (sections && sections.length) {
+      this.looping = false;
+      for (let si = 0; si < sections.length; si++) {
+        const sec = sections[si];
+        const prog = sec.progression || song.progression;
+        for (let r = 0; r < (sec.repeats || 1); r++) {
+          for (let ci = 0; ci < prog.length; ci++) {
+            this.segments.push({
+              chord: prog[ci].chord,
+              beats: prog[ci].beats,
+              sectionIdx: si,
+              sectionRepeat: r,
+              chordIdxInSection: ci,
+            });
+          }
+        }
+      }
+    } else {
+      this.looping = true;
+      const prog = song.progression || [];
+      for (let ci = 0; ci < prog.length; ci++) {
+        this.segments.push({
+          chord: prog[ci].chord,
+          beats: prog[ci].beats,
+          sectionIdx: -1,
+          sectionRepeat: 0,
+          chordIdxInSection: ci,
+        });
+      }
+    }
   }
 
   stop() { this.running = false; }
 
   update() {
-    if (!this.running || !this.progression.length) return;
+    if (!this.running || !this.segments.length) return;
     const elapsed = (performance.now() - this.startTime) / 1000;
     const beatDur = 60 / this.bpm;
     const totalBeat = elapsed / beatDur;
-    const totalBeats = this.progression.reduce((s, c) => s + c.beats, 0);
+    const totalSegBeats = this.segments.reduce((s, seg) => s + seg.beats, 0);
 
-    if (this.sections) {
-      const totalSectionPasses = this.sections.reduce((s, sec) => s + sec.repeats, 0);
-      const totalSongBeats = totalSectionPasses * totalBeats;
-
-      if (totalBeat >= totalSongBeats) {
+    let beatPos;
+    if (this.looping || this.loopMode) {
+      beatPos = totalBeat % totalSegBeats;
+      const newLoop = Math.floor(totalBeat / totalSegBeats);
+      if (newLoop !== this.loopCount) this.loopCount = newLoop;
+    } else {
+      if (totalBeat >= totalSegBeats) {
         this.finished = true;
         this.running = false;
         if (this.onFinish) this.onFinish();
         return;
       }
+      beatPos = totalBeat;
+    }
 
-      let remaining = totalBeat;
-      let secIdx = 0;
-      let secRep = 0;
-      for (let si = 0; si < this.sections.length; si++) {
-        const secBeats = this.sections[si].repeats * totalBeats;
-        if (remaining < secBeats) {
-          secIdx = si;
-          secRep = Math.floor(remaining / totalBeats);
-          remaining = remaining % totalBeats;
-          break;
-        }
-        remaining -= secBeats;
+    let accum = 0;
+    for (let i = 0; i < this.segments.length; i++) {
+      if (beatPos < accum + this.segments[i].beats) {
+        this.segIdx = i;
+        this.beatInChord = beatPos - accum;
+        const seg = this.segments[i];
+        this.sectionIdx = seg.sectionIdx;
+        this.sectionRepeat = seg.sectionRepeat;
+        return;
       }
-      this.sectionIdx = secIdx;
-      this.sectionRepeat = secRep;
-
-      let accum = 0;
-      for (let i = 0; i < this.progression.length; i++) {
-        if (remaining < accum + this.progression[i].beats) {
-          this.idx = i;
-          this.beatInChord = remaining - accum;
-          return;
-        }
-        accum += this.progression[i].beats;
-      }
-    } else {
-      const looped = totalBeat % totalBeats;
-      const newLoop = Math.floor(totalBeat / totalBeats);
-      if (newLoop !== this.loopCount) this.loopCount = newLoop;
-
-      let accum = 0;
-      for (let i = 0; i < this.progression.length; i++) {
-        if (looped < accum + this.progression[i].beats) {
-          this.idx = i;
-          this.beatInChord = looped - accum;
-          return;
-        }
-        accum += this.progression[i].beats;
-      }
+      accum += this.segments[i].beats;
     }
   }
 
-  currentChord() { return this.progression[this.idx]; }
+  currentChord() { return this.segments[this.segIdx]; }
   currentBeat() { return Math.floor(this.beatInChord); }
-  currentBeatsTotal() { return this.progression[this.idx]?.beats || 4; }
+  currentBeatsTotal() { return this.segments[this.segIdx]?.beats || 4; }
+
+  currentChordIdxInSection() {
+    return this.segments[this.segIdx]?.chordIdxInSection ?? 0;
+  }
+
+  currentSectionProgression() {
+    if (!this.song) return [];
+    if (this.song.sections && this.song.sections[this.sectionIdx]) {
+      return this.song.sections[this.sectionIdx].progression || this.song.progression;
+    }
+    return this.song.progression || [];
+  }
 
   currentSectionName() {
-    if (!this.sections || !this.sections[this.sectionIdx]) return null;
-    return this.sections[this.sectionIdx].name;
+    if (!this.song || !this.song.sections) return null;
+    const sec = this.song.sections[this.sectionIdx];
+    return sec ? sec.name : null;
   }
 
   currentSectionLabel() {
-    if (!this.sections) return null;
-    const sec = this.sections[this.sectionIdx];
+    if (!this.song || !this.song.sections) return null;
+    const sec = this.song.sections[this.sectionIdx];
     if (!sec) return null;
-    if (sec.repeats <= 1) return sec.name;
+    if ((sec.repeats || 1) <= 1) return sec.name;
     return `${sec.name} (${this.sectionRepeat + 1}/${sec.repeats})`;
   }
 
+  currentLyrics() {
+    if (!this.song || !this.song.sections) return null;
+    const sec = this.song.sections[this.sectionIdx];
+    return sec ? sec.lyrics || null : null;
+  }
+
   progress() {
-    if (!this.running || !this.progression.length) return 0;
+    if (!this.running || !this.segments.length) return 0;
     const elapsed = (performance.now() - this.startTime) / 1000;
     const beatDur = 60 / this.bpm;
-    const totalBeats = this.progression.reduce((s, c) => s + c.beats, 0);
+    const totalSegBeats = this.segments.reduce((s, seg) => s + seg.beats, 0);
     const totalBeat = elapsed / beatDur;
-    return (totalBeat % totalBeats) / totalBeats;
+    return (totalBeat % totalSegBeats) / totalSegBeats;
   }
 }
 
@@ -881,12 +998,26 @@ const STRUM_PATTERNS = {
   },
   rock: {
     label: 'Rock',
-    slots: ['D', '-', 'D', '-', '-', 'U', 'D', '-'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', '-'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
       { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
+    ],
+  },
+  'brown-eyed-girl': {
+    label: 'Brown Eyed Girl',
+    slots: ['D', '-', 'D', 'U', 'D', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2,   dir: 'down' },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
     ],
   },
   reggae: {
@@ -901,32 +1032,34 @@ const STRUM_PATTERNS = {
   },
   'let-it-be': {
     label: 'Let It Be',
-    slots: ['D', '-', '-', 'U', 'D', 'U', '-', 'U'],
-    strums: [
-      { beat: 0,   dir: 'down' },
-      { beat: 1.5, dir: 'up'   },
-      { beat: 2,   dir: 'down' },
-      { beat: 2.5, dir: 'up'   },
-      { beat: 3.5, dir: 'up'   },
-    ],
-  },
-  'knockin': {
-    label: "Knockin'",
-    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', '-'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
       { beat: 1.5, dir: 'up'   },
       { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'knockin': {
+    label: "Knockin'",
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
     ],
   },
   'horse': {
     label: 'Horse',
-    slots: ['D', '-', '-', 'U', 'D', 'U', 'D', 'U'],
+    slots: ['D', '-', 'D', '-', 'D', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
-      { beat: 1.5, dir: 'up'   },
+      { beat: 1,   dir: 'down' },
       { beat: 2,   dir: 'down' },
       { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
@@ -935,12 +1068,13 @@ const STRUM_PATTERNS = {
   },
   'stand-by-me': {
     label: 'Stand By Me',
-    slots: ['D', '-', 'D', '-', 'D', 'U', '-', 'U'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
-      { beat: 2,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
       { beat: 2.5, dir: 'up'   },
+      { beat: 3,   dir: 'down' },
       { beat: 3.5, dir: 'up'   },
     ],
   },
@@ -973,32 +1107,37 @@ const STRUM_PATTERNS = {
   },
   'sweet-home': {
     label: 'Sweet Home',
-    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', '-'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
       { beat: 1.5, dir: 'up'   },
       { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
+      { beat: 3.5, dir: 'up'   },
     ],
   },
   'hallelujah': {
     label: 'Hallelujah',
-    slots: ['D', '-', '-', 'D', '-', '-', 'D', 'U'],
+    // 6/8: 6 eighth-note beats per chord (12 half-beat slots)
+    slots: ['D', '-', 'U', '-', 'U', '-', 'D', '-', 'U', '-', 'U', '-'],
     strums: [
       { beat: 0,   dir: 'down' },
-      { beat: 1.5, dir: 'down' },
+      { beat: 1,   dir: 'up'   },
+      { beat: 2,   dir: 'up'   },
       { beat: 3,   dir: 'down' },
-      { beat: 3.5, dir: 'up'   },
+      { beat: 4,   dir: 'up'   },
+      { beat: 5,   dir: 'up'   },
     ],
   },
   'wish-you-were-here': {
     label: 'Wish',
-    slots: ['D', '-', 'D', 'U', '-', '-', 'D', 'U'],
+    slots: ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
       { beat: 1.5, dir: 'up'   },
+      { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
       { beat: 3.5, dir: 'up'   },
     ],
@@ -1029,14 +1168,34 @@ const STRUM_PATTERNS = {
   },
   'twist-and-shout': {
     label: 'Twist & Shout',
-    slots: ['D', '-', 'D', '-', 'D', 'U', 'D', 'U'],
+    slots: ['D', '-', 'D', 'U', 'D', 'U', 'D', 'U'],
     strums: [
       { beat: 0,   dir: 'down' },
       { beat: 1,   dir: 'down' },
+      { beat: 1.5, dir: 'up'   },
       { beat: 2,   dir: 'down' },
       { beat: 2.5, dir: 'up'   },
       { beat: 3,   dir: 'down' },
       { beat: 3.5, dir: 'up'   },
+    ],
+  },
+  'waltz': {
+    label: 'Waltz',
+    slots: ['D', '-', 'D', '-', 'D', '-'],
+    strums: [
+      { beat: 0, dir: 'down' },
+      { beat: 1, dir: 'down' },
+      { beat: 2, dir: 'down' },
+    ],
+  },
+  'fingerpick': {
+    label: 'Fingerpick',
+    slots: ['D', '-', 'U', '-', 'U', '-', 'U', '-'],
+    strums: [
+      { beat: 0,   dir: 'down' },
+      { beat: 1,   dir: 'up'   },
+      { beat: 2,   dir: 'up'   },
+      { beat: 3,   dir: 'up'   },
     ],
   },
 };
@@ -1048,6 +1207,14 @@ function inferPattern(bpm) {
   if (bpm < 70) return 'ballad';
   if (bpm <= 130) return 'pop';
   return 'rock';
+}
+
+function generateBeatLabels(numSlots) {
+  const labels = [];
+  for (let i = 0; i < numSlots; i++) {
+    labels.push(i % 2 === 0 ? String(i / 2 + 1) : '&');
+  }
+  return labels;
 }
 
 // ── AutoPlayer ──────────────────────────────────────────────
@@ -1126,7 +1293,13 @@ class App {
     this.handState = { x: 0, y: 0, prevY: 0, active: false };
     this.stringStates = new Array(6).fill(0);
 
-    this.autoPlayer = new AutoPlayer((dir) => this.triggerAutoStrum(dir));
+    this.autoPlayer = new AutoPlayer((dir) => {
+      if (this.currentSong && this.currentSong.fingerpick) {
+        this.triggerFingerPick(dir === 'down');
+      } else {
+        this.triggerAutoStrum(dir);
+      }
+    });
     this.autoStrum = { active: false, startTime: 0, duration: 60, direction: 'down' };
     this.autoMode = false;
     this.strumHalfWidth = 0.11;
@@ -1141,8 +1314,9 @@ class App {
     this.coloredGuitar = null;
     this.activePatternName = 'pop';
 
-    this.metronomeOn = false;
+    this.metronomeOn = true;
     this.lastMetronomeBeat = -1;
+    this._lastGuideSlot = -1;
 
     this.score = 0;
     this.streak = 0;
@@ -1152,6 +1326,14 @@ class App {
     this.hasPlayedOnce = false;
     this.scoreTooltipShown = false;
     this.cameraAvailable = false;
+
+    this.countingIn = false;
+    this.countInStart = 0;
+    this.countInBeats = 4;
+    this.countInBpm = 100;
+    this.countInCurrent = 0;
+    this.lastCountInBeat = -1;
+    this.loopMode = false;
 
     this.init();
   }
@@ -1224,6 +1406,13 @@ class App {
     document.getElementById('metronome-btn').addEventListener('click', () => {
       this.metronomeOn = !this.metronomeOn;
       document.getElementById('metronome-btn').classList.toggle('active', this.metronomeOn);
+    });
+    document.getElementById('loop-btn').addEventListener('click', () => {
+      this.loopMode = !this.loopMode;
+      document.getElementById('loop-btn').classList.toggle('active', this.loopMode);
+      if (this.timer.running) {
+        this.timer.loopMode = this.loopMode;
+      }
     });
 
     const calCanvas = document.getElementById('calibrate-canvas');
@@ -1438,11 +1627,14 @@ class App {
     }
 
     const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
-    const patName = overrides[song.id] || song.pattern || inferPattern(song.bpm || 120);
+    const patName = overrides[song.id] || song.pattern || (song.fingerpick ? 'fingerpick' : inferPattern(song.bpm || 120));
     this.setActivePattern(patName);
 
+    const ts = song.timeSignature || [4, 4];
+    this.setupBeatDots(ts[0]);
+
     this.setChord(song.progression[0].chord);
-    this.updateProgressionDisplay(-1);
+    this.updateProgressionDisplay();
     this.completeStep(3);
     this.updateWelcome();
   }
@@ -1534,10 +1726,9 @@ class App {
   }
 
   async fetchSongsterrChords(song) {
-    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if (isLocal) return;
     try {
-      const res = await fetch(`/api/chords?songsterrId=${song.songsterrId}`);
+      const url = `/api/chords?songsterrId=${song.songsterrId}`;
+      const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data.chords) && data.chords.length) {
@@ -1665,6 +1856,30 @@ class App {
       const artistEl = document.querySelector('.welcome-song-artist');
       if (titleEl) titleEl.textContent = this.currentSong.title;
       if (artistEl) artistEl.textContent = this.currentSong.artist;
+
+      const bpmEl = document.getElementById('welcome-bpm');
+      const keyEl = document.getElementById('welcome-key');
+      const capoEl = document.getElementById('welcome-capo');
+      const ytEl = document.getElementById('welcome-youtube');
+
+      if (bpmEl) bpmEl.textContent = `${this.currentSong.bpm || 120} BPM`;
+      if (keyEl) keyEl.textContent = `Key: ${this.currentSong.key || '?'}`;
+      if (capoEl) {
+        if (this.currentSong.capo) {
+          capoEl.textContent = `Capo ${this.currentSong.capo}`;
+          capoEl.classList.remove('hidden');
+        } else {
+          capoEl.classList.add('hidden');
+        }
+      }
+      if (ytEl) {
+        if (this.currentSong.youtubeId) {
+          ytEl.href = `https://www.youtube.com/watch?v=${this.currentSong.youtubeId}`;
+          ytEl.classList.remove('hidden');
+        } else {
+          ytEl.classList.add('hidden');
+        }
+      }
     }
 
     // Update calibration step visual
@@ -1698,7 +1913,7 @@ class App {
     if (!slotsEl) return;
 
     slotsEl.innerHTML = '';
-    const beatLabels = ['1', '&', '2', '&', '3', '&', '4', '&'];
+    const beatLabels = generateBeatLabels(pat.slots.length);
     pat.slots.forEach((slot, i) => {
       const div = document.createElement('span');
       div.className = 'pattern-slot';
@@ -1754,9 +1969,6 @@ class App {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(async () => {
         if (local.length >= 3) return;
-        // Skip API search on localhost (no backend)
-        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-        if (isLocal) return;
 
         const hint = document.createElement('div');
         hint.className = 'welcome-search-result searching';
@@ -1765,19 +1977,16 @@ class App {
 
         try {
           const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-          if (res.ok) {
-            const data = await res.json();
-            const remote = data.songs || [];
-            if (remote.length) {
-              const merged = [...local];
-              const localIds = new Set(local.map(s => s.id));
-              for (const r of remote) {
-                if (!localIds.has(r.id)) merged.push(r);
-              }
-              this.showWelcomeResults(merged, results);
-            } else {
-              hint.remove();
+          if (!res.ok) { hint.remove(); return; }
+          const data = await res.json();
+          const remote = data.songs || [];
+          if (remote.length) {
+            const merged = [...local];
+            const localIds = new Set(local.map(s => s.id));
+            for (const r of remote) {
+              if (!localIds.has(r.id)) merged.push(r);
             }
+            this.showWelcomeResults(merged, results);
           } else {
             hint.remove();
           }
@@ -1799,11 +2008,18 @@ class App {
       const div = document.createElement('div');
       div.className = 'welcome-search-result';
       const diff = songDifficulty(item);
-      div.innerHTML = `<span>${item.title}</span><span class="song-meta"><span class="diff-badge" style="background:${diff.color}">${diff.label}</span><span class="song-artist">${item.artist}</span></span>`;
-      div.addEventListener('click', () => {
+      div.innerHTML = `<span>${item.title}</span><span class="song-meta"><span class="diff-badge" style="background:${diff.color}">${diff.label}</span><span class="song-artist">${item.artist}</span><button class="demo-pattern-btn" title="Demo this song's pattern">&#9654; Pattern</button></span>`;
+      // Click song name to select
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('.demo-pattern-btn')) return;
         this.selectSong(item);
         document.getElementById('current-song-label').textContent = item.title;
         document.getElementById('welcome-search-wrap').classList.add('hidden');
+      });
+      // Click "Pattern" button to demo
+      div.querySelector('.demo-pattern-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.demoSongPattern(item);
       });
       container.appendChild(div);
     }
@@ -1834,6 +2050,100 @@ class App {
     if (this.currentSong) {
       this.timer.bpm = (this.currentSong.bpm || 120) * this.speedMultiplier;
     }
+  }
+
+  setupBeatDots(count) {
+    const container = document.getElementById('beat-dots');
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      container.appendChild(dot);
+    }
+  }
+
+  triggerFingerPick(bass = true) {
+    if (!this.currentBuffers || !this.layout) return;
+    const vel = 0.45;
+    const now = performance.now();
+    if (bass) {
+      for (let s = 0; s < 6; s++) {
+        if (!this.mutedStrings[s]) {
+          this.audio.playString(this.currentBuffers, s, vel);
+          this.stringStates[s] = now;
+          break;
+        }
+      }
+    } else {
+      for (let s = 3; s < 6; s++) {
+        if (!this.mutedStrings[s]) {
+          const delay = (s - 3) * 25;
+          this.audio.playString(this.currentBuffers, s, vel * 0.8, delay);
+          this.stringStates[s] = now + delay;
+        }
+      }
+    }
+    this.autoStrum = { active: true, startTime: now, duration: 40, direction: bass ? 'down' : 'up' };
+  }
+
+  startCountIn() {
+    const ts = this.currentSong.timeSignature || [4, 4];
+    this.countInBeats = ts[0];
+    let bpm = (this.currentSong.bpm || 120) * this.speedMultiplier;
+    if (ts[1] === 8) bpm = bpm * 3;
+    this.countInBpm = bpm;
+    this.countInStart = performance.now();
+    this.countingIn = true;
+    this.countInCurrent = 0;
+    this.lastCountInBeat = -1;
+    this.audio.start();
+  }
+
+  finishCountIn() {
+    this.countingIn = false;
+    // BPM conversion for compound meters happens inside timer.start()
+    const bpm = (this.currentSong.bpm || 120) * this.speedMultiplier;
+    this.timer.start(this.currentSong, bpm);
+    this.timer.onFinish = () => this.onSongFinished();
+    this.timer.loopMode = this.loopMode;
+    this.lastTimerIdx = -1;
+  }
+
+  updateLyrics() {
+    const overlay = document.getElementById('lyrics-overlay');
+    const content = document.getElementById('lyrics-content');
+    if (!overlay || !content) return;
+
+    if (!this.playing || this.countingIn) {
+      overlay.classList.add('hidden');
+      return;
+    }
+
+    const lyrics = this.timer.currentLyrics();
+    if (!lyrics || !lyrics.length) {
+      overlay.classList.add('hidden');
+      return;
+    }
+
+    overlay.classList.remove('hidden');
+    const chordIdx = this.timer.currentChordIdxInSection();
+    const prog = this.timer.currentSectionProgression();
+    const totalChords = prog.length;
+
+    content.innerHTML = '';
+    lyrics.forEach((line, i) => {
+      const div = document.createElement('div');
+      div.className = 'lyric-line';
+      const lineChordStart = Math.floor(i * totalChords / lyrics.length);
+      const lineChordEnd = Math.floor((i + 1) * totalChords / lyrics.length);
+      if (chordIdx >= lineChordStart && chordIdx < lineChordEnd) {
+        div.classList.add('active');
+      } else if (chordIdx >= lineChordEnd) {
+        div.classList.add('past');
+      }
+      div.innerHTML = line.replace(/\[([^\]]+)\]/g, '<span class="lyric-chord">$1</span>');
+      content.appendChild(div);
+    });
   }
 
   useDefaultCalibration() {
@@ -1882,11 +2192,13 @@ class App {
     const btn = document.getElementById('play-btn');
     if (this.playing) {
       this.playing = false;
+      this.countingIn = false;
       this.timer.stop();
       this.lastMetronomeBeat = -1;
       btn.textContent = 'Play';
       btn.classList.remove('active');
       if (this.autoMode) this.toggleAuto();
+      document.getElementById('lyrics-overlay').classList.add('hidden');
       this.showWelcome();
       this.updateIdleLabel();
     } else {
@@ -1903,9 +2215,7 @@ class App {
       this.audio.start();
       this.resetScore();
       this.lastMetronomeBeat = -1;
-      this.timer.start(this.currentSong.progression, (this.currentSong.bpm || 120) * this.speedMultiplier, this.currentSong.sections);
-      this.timer.onFinish = () => this.onSongFinished();
-      this.lastTimerIdx = -1;
+      this.startCountIn();
       btn.textContent = 'Stop';
       btn.classList.add('active');
       this.completeStep(5);
@@ -1941,6 +2251,31 @@ class App {
       btn.classList.add('active');
       if (!this.playing) this.togglePlay();
     }
+  }
+
+  async demoSongPattern(song) {
+    // Select the song, persist its pattern, close UI, and start demo
+    await this.selectSong(song);
+    document.getElementById('current-song-label').textContent = song.title;
+    document.getElementById('welcome-search-wrap').classList.add('hidden');
+
+    // Persist the pattern choice
+    const patName = this.activePatternName;
+    const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
+    overrides[song.id] = patName;
+    localStorage.setItem('air-guitar-pattern-overrides', JSON.stringify(overrides));
+
+    // Enter demo mode: hide welcome, start auto playback
+    this.hideWelcome();
+    if (!this.autoMode) {
+      if (!this.calibrated) this.useDefaultCalibration();
+      this.autoMode = true;
+      this.autoPlayer.start();
+      const btn = document.getElementById('auto-btn');
+      btn.textContent = 'Demo Off';
+      btn.classList.add('active');
+    }
+    if (!this.playing) this.togglePlay();
   }
 
   promptCalibration() {
@@ -2071,23 +2406,32 @@ class App {
     };
   }
 
-  updateProgressionDisplay(activeIdx) {
+  updateProgressionDisplay() {
     const el = document.getElementById('progression');
     el.innerHTML = '';
     if (!this.currentSong) return;
 
-    const sectionLabel = this.timer.currentSectionLabel();
     const labelEl = document.getElementById('section-label');
     if (labelEl) {
-      labelEl.textContent = sectionLabel || '';
+      if (this.timer.running) {
+        const sectionLabel = this.timer.currentSectionLabel();
+        labelEl.textContent = sectionLabel || '';
+      } else if (!this.playing) {
+        labelEl.innerHTML = '<span class="progression-label">Chord Progression</span>';
+      }
     }
 
-    this.currentSong.progression.forEach((c, i) => {
+    const prog = this.timer.running
+      ? this.timer.currentSectionProgression()
+      : (this.currentSong.progression || []);
+    const activeInSection = this.timer.running ? this.timer.currentChordIdxInSection() : -1;
+
+    prog.forEach((c, i) => {
       const pill = document.createElement('span');
       pill.className = 'chord-pill';
-      if (i === activeIdx) pill.classList.add('active');
-      else if (i < activeIdx) pill.classList.add('past');
-      else if (i === activeIdx + 1) pill.classList.add('next');
+      if (i === activeInSection) pill.classList.add('active');
+      else if (i < activeInSection) pill.classList.add('past');
+      else if (i === activeInSection + 1) pill.classList.add('next');
       pill.textContent = c.chord;
       pill.style.cursor = 'pointer';
       pill.addEventListener('click', () => this.setChord(c.chord));
@@ -2192,25 +2536,48 @@ class App {
   loop() {
     requestAnimationFrame(() => this.loop());
 
-    if (this.playing) {
+    if (this.countingIn) {
+      const elapsed = (performance.now() - this.countInStart) / 1000;
+      const beatDur = 60 / this.countInBpm;
+      const currentBeat = Math.floor(elapsed / beatDur);
+      if (currentBeat !== this.lastCountInBeat && currentBeat < this.countInBeats) {
+        this.lastCountInBeat = currentBeat;
+        this.countInCurrent = currentBeat + 1;
+        this.audio.playClick(currentBeat === 0);
+      }
+      if (elapsed >= this.countInBeats * beatDur) {
+        this.finishCountIn();
+      }
+    }
+
+    if (this.playing && !this.countingIn) {
       this.timer.update();
       const idx = this.timer.idx;
       if (idx !== this.lastTimerIdx) {
         this.lastTimerIdx = idx;
+        this._lastGuideSlot = -1;
         const ch = this.timer.currentChord();
         if (ch) {
           this.setChord(ch.chord);
           this.chordFlashTime = performance.now();
         }
-        this.updateProgressionDisplay(idx);
+        this.updateProgressionDisplay();
+        this.updateLyrics();
       }
       this.updateBeatDots(this.timer.currentBeat(), this.timer.currentBeatsTotal());
 
       if (this.metronomeOn) {
-        const currentBeat = Math.floor(this.timer.beatInChord);
-        if (currentBeat !== this.lastMetronomeBeat) {
-          this.lastMetronomeBeat = currentBeat;
-          this.audio.playClick(currentBeat === 0);
+        const pat = STRUM_PATTERNS[this.activePatternName];
+        if (pat) {
+          const patternBeats = pat.slots.length / 2;
+          const moduloBeat = this.timer.beatInChord % patternBeats;
+          const currentSlot = Math.floor(moduloBeat * 2);
+          if (currentSlot !== this._lastGuideSlot) {
+            this._lastGuideSlot = currentSlot;
+            const slot = pat.slots[currentSlot % pat.slots.length];
+            if (slot === 'D') this.audio.playChuck(true);
+            else if (slot === 'U') this.audio.playChuck(false);
+          }
         }
       }
 
@@ -2227,12 +2594,25 @@ class App {
 
     c.drawImage(this.coloredGuitar || this.guitarImg, L.imgX, L.imgY, L.imgW, L.imgH);
 
-    if (this.playing && this.currentSong) {
+    // Count-in display
+    if (this.countingIn && this.countInCurrent > 0) {
+      c.save();
+      c.font = 'bold 120px Inter, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillStyle = 'rgba(0, 212, 255, 0.8)';
+      c.shadowColor = 'rgba(0, 212, 255, 0.5)';
+      c.shadowBlur = 30;
+      c.fillText(this.countInCurrent, this.W / 2, this.H / 2);
+      c.restore();
+    }
+
+    if (this.playing && !this.countingIn && this.currentSong) {
       const totalBeatsInChord = this.timer.currentBeatsTotal();
       const beatsLeft = totalBeatsInChord - this.timer.beatInChord;
       if (beatsLeft <= 1) {
-        const nextIdx = (this.timer.idx + 1) % this.currentSong.progression.length;
-        const nextChordName = this.currentSong.progression[nextIdx].chord;
+        const nextIdx = (this.timer.idx + 1) % this.timer.segments.length;
+        const nextChordName = this.timer.segments[nextIdx].chord;
         const nextPos = lookupChord(this.chordDB, nextChordName);
         if (nextPos && nextChordName !== this.currentChordName) {
           drawGhostDots(c, nextPos, L);
@@ -2271,9 +2651,10 @@ class App {
     const beat = this.playing ? this.timer.beatInChord : -1;
     drawStrumPattern(c, this.activePatternName, beat, L.patX, L.patY, L.patW);
 
-    if (this.playing) {
+    if (this.playing && !this.countingIn) {
       const totalBeats = this.timer.currentBeatsTotal();
       drawBeatTimeline(c, this.activePatternName, beat, totalBeats, L.patX, L.tlY, L.patW);
+      drawStrumGuide(c, L, this.activePatternName, beat, totalBeats);
     }
 
     let cursor = null;

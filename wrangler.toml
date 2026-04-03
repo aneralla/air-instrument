@@ -1,0 +1,6 @@
+name = "air-instrument"
+compatibility_date = "2024-12-01"
+
+[[kv_namespaces]]
+binding = "SONG_CACHE"
+id = "ab77e28e0d594d62884db5945fdd50ee"

@@ -3,28 +3,99 @@
     "id": "let-it-be",
     "title": "Let It Be",
     "artist": "The Beatles",
+    "key": "C",
     "bpm": 72,
+    "timeSignature": [4, 4],
     "pattern": "let-it-be",
+    "youtubeId": "QDYfEBY9NM4",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "C", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "Am", "beats": 4},
+          {"chord": "F", "beats": 4}
+        ],
+        "lyrics": [
+          "[C]When I find myself in [G]times of trouble",
+          "[Am]Mother Mary [F]comes to me",
+          "[C]Speaking words of [G]wisdom",
+          "[Am]Let it [F]be"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "Am", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4}
+        ],
+        "lyrics": [
+          "[Am]Let it [G]be, let it [F]be",
+          "Let it [C]be, let it be",
+          "[Am]Whisper words of [G]wisdom",
+          "[F]Let it [C]be"
+        ]
+      },
+      {
+        "name": "Outro",
+        "repeats": 1,
+        "progression": [
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "F", "beats": 4}
+        ]
+      }
+    ],
     "progression": [
       {"chord": "C", "beats": 4},
       {"chord": "G", "beats": 4},
       {"chord": "Am", "beats": 4},
       {"chord": "F", "beats": 4}
-    ],
-    "sections": [
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 2},
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 2},
-      {"name": "Outro", "repeats": 1}
     ]
   },
   {
     "id": "knockin-on-heavens-door",
     "title": "Knockin' on Heaven's Door",
     "artist": "Bob Dylan",
+    "key": "G",
     "bpm": 68,
+    "timeSignature": [4, 4],
     "pattern": "knockin",
+    "youtubeId": "rnMKHbAMbXc",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 3,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "Am", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Mama take this [D]badge off of [Am]me",
+          "[G]I can't [D]use it any[Am]more"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 3,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "C", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Knock knock [D]knockin' on [C]heaven's door",
+          "[G]Knock knock [D]knockin' on [C]heaven's door"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "D", "beats": 4},
@@ -38,8 +109,25 @@
     "id": "horse-with-no-name",
     "title": "A Horse With No Name",
     "artist": "America",
+    "key": "Em",
     "bpm": 120,
+    "timeSignature": [4, 4],
     "pattern": "horse",
+    "youtubeId": "zSAJ0l4OBHM",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 4,
+        "progression": [
+          {"chord": "Em", "beats": 8},
+          {"chord": "D", "beats": 8}
+        ],
+        "lyrics": [
+          "[Em]On the first part of the [D]journey",
+          "[Em]I was looking at all the [D]life"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "Em", "beats": 8},
       {"chord": "D", "beats": 8}
@@ -49,21 +137,71 @@
     "id": "love-me-do",
     "title": "Love Me Do",
     "artist": "The Beatles",
+    "key": "G",
     "bpm": 148,
+    "timeSignature": [4, 4],
     "pattern": "rock",
+    "youtubeId": "0pGOFX1D_jg",
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "C", "beats": 4},
       {"chord": "G", "beats": 4},
       {"chord": "C", "beats": 4}
+    ],
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 4,
+        "lyrics": [
+          "[G]Love love me [C]do",
+          "[G]You know I love [C]you"
+        ]
+      }
     ]
   },
   {
     "id": "stand-by-me",
     "title": "Stand By Me",
     "artist": "Ben E. King",
+    "key": "G",
     "bpm": 120,
+    "timeSignature": [4, 4],
     "pattern": "stand-by-me",
+    "youtubeId": "hwZNL7QVJjE",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "Em", "beats": 4},
+          {"chord": "Em", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]When the night has come",
+          "[G]And the land is dark",
+          "[Em]And the moon is the",
+          "[Em]only light we'll see"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "Em", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "D", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Stand by [Em]me, oh",
+          "[C]Stand by [D]me",
+          "[G]Stand by [Em]me",
+          "[C]Stand by [D]me"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -75,8 +213,30 @@
     "id": "riptide",
     "title": "Riptide",
     "artist": "Vance Joy",
+    "key": "Am",
+    "capo": 1,
     "bpm": 102,
+    "timeSignature": [4, 4],
     "pattern": "riptide",
+    "youtubeId": "uJ_1HMAGb4k",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "lyrics": [
+          "[Am]I was scared of [G]dentists and the [C]dark",
+          "[Am]I was scared of [G]pretty girls and [C]starting conversations"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "lyrics": [
+          "[Am]I got a lump in my [G]throat 'cause",
+          "[C]You're gonna sing the words wrong"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -88,8 +248,48 @@
     "id": "three-little-birds",
     "title": "Three Little Birds",
     "artist": "Bob Marley",
+    "key": "A",
     "bpm": 74,
+    "timeSignature": [4, 4],
     "pattern": "reggae",
+    "youtubeId": "zaGUr6wzyT8",
+    "sections": [
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "A", "beats": 4},
+          {"chord": "A", "beats": 4},
+          {"chord": "A", "beats": 4},
+          {"chord": "A", "beats": 4}
+        ],
+        "lyrics": [
+          "[A]Don't worry about a thing",
+          "[A]'Cause every little thing",
+          "[A]Gonna be all [A]right"
+        ]
+      },
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "A", "beats": 4},
+          {"chord": "A", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "A", "beats": 4},
+          {"chord": "A", "beats": 4},
+          {"chord": "E", "beats": 4}
+        ],
+        "lyrics": [
+          "[A]Rise up this morning",
+          "[A]Smiled with the rising sun",
+          "[D]Three little birds",
+          "[A]Pitch by my doorstep",
+          "[A]Singin' sweet songs",
+          "[E]Of melodies pure and true"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "A", "beats": 4},
       {"chord": "A", "beats": 4},
@@ -103,23 +303,79 @@
     "id": "happy-birthday",
     "title": "Happy Birthday",
     "artist": "Traditional",
+    "key": "G",
     "bpm": 100,
-    "pattern": "simple",
+    "timeSignature": [3, 4],
+    "pattern": "waltz",
+    "youtubeId": "inS9gAgSENM",
+    "sections": [
+      {
+        "name": "Song",
+        "repeats": 1,
+        "progression": [
+          {"chord": "G", "beats": 3},
+          {"chord": "G", "beats": 3},
+          {"chord": "C", "beats": 3},
+          {"chord": "G", "beats": 3},
+          {"chord": "D", "beats": 3},
+          {"chord": "G", "beats": 3}
+        ],
+        "lyrics": [
+          "[G]Happy birthday to [G]you",
+          "[G]Happy birthday to [C]you",
+          "Happy birthday dear [G]friend",
+          "Happy [D]birthday to [G]you"
+        ]
+      }
+    ],
     "progression": [
-      {"chord": "G", "beats": 4},
-      {"chord": "G", "beats": 4},
-      {"chord": "C", "beats": 4},
-      {"chord": "G", "beats": 4},
-      {"chord": "D", "beats": 4},
-      {"chord": "G", "beats": 4}
+      {"chord": "G", "beats": 3},
+      {"chord": "G", "beats": 3},
+      {"chord": "C", "beats": 3},
+      {"chord": "G", "beats": 3},
+      {"chord": "D", "beats": 3},
+      {"chord": "G", "beats": 3}
     ]
   },
   {
     "id": "country-roads",
     "title": "Take Me Home, Country Roads",
     "artist": "John Denver",
+    "key": "G",
     "bpm": 82,
+    "timeSignature": [4, 4],
     "pattern": "country-roads",
+    "youtubeId": "1vrEljMfXYo",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "Em", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "C", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Almost heaven, [Em]West Virginia",
+          "[D]Blue Ridge Mountains, [C]Shenandoah River"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "Em", "beats": 4},
+          {"chord": "C", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Country roads, [D]take me home",
+          "[Em]To the place [C]I belong"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "Em", "beats": 4},
@@ -131,8 +387,29 @@
     "id": "sweet-home-alabama",
     "title": "Sweet Home Alabama",
     "artist": "Lynyrd Skynyrd",
+    "key": "G",
     "bpm": 98,
+    "timeSignature": [4, 4],
     "pattern": "sweet-home",
+    "youtubeId": "ye5BuYf8q4o",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "lyrics": [
+          "[D]Big wheels keep on [C]turning",
+          "[G]Carry me home to see my [G]kin"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "lyrics": [
+          "[D]Sweet home [C]Alabama",
+          "[G]Where the skies are so [G]blue"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -144,33 +421,80 @@
     "id": "hallelujah",
     "title": "Hallelujah",
     "artist": "Leonard Cohen",
+    "key": "C",
     "bpm": 56,
+    "timeSignature": [6, 8],
     "pattern": "hallelujah",
-    "progression": [
-      {"chord": "C", "beats": 4},
-      {"chord": "Am", "beats": 4},
-      {"chord": "C", "beats": 4},
-      {"chord": "Am", "beats": 4},
-      {"chord": "F", "beats": 4},
-      {"chord": "G", "beats": 4},
-      {"chord": "C", "beats": 4},
-      {"chord": "G", "beats": 4}
-    ],
+    "fingerpick": true,
+    "youtubeId": "ttEMYvpoR-k",
     "sections": [
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 1},
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 1},
-      {"name": "Verse", "repeats": 1},
-      {"name": "Chorus", "repeats": 2}
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "C", "beats": 6},
+          {"chord": "Am", "beats": 6},
+          {"chord": "C", "beats": 6},
+          {"chord": "Am", "beats": 6}
+        ],
+        "lyrics": [
+          "[C]I've heard there was a [Am]secret chord",
+          "[C]That David played and it [Am]pleased the Lord"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "F", "beats": 6},
+          {"chord": "G", "beats": 6},
+          {"chord": "C", "beats": 6},
+          {"chord": "G", "beats": 6}
+        ],
+        "lyrics": [
+          "[F]Halle[G]lujah",
+          "[C]Halle[G]lujah"
+        ]
+      }
+    ],
+    "progression": [
+      {"chord": "C", "beats": 6},
+      {"chord": "Am", "beats": 6},
+      {"chord": "C", "beats": 6},
+      {"chord": "Am", "beats": 6},
+      {"chord": "F", "beats": 6},
+      {"chord": "G", "beats": 6},
+      {"chord": "C", "beats": 6},
+      {"chord": "G", "beats": 6}
     ]
   },
   {
     "id": "brown-eyed-girl",
     "title": "Brown Eyed Girl",
     "artist": "Van Morrison",
+    "key": "G",
     "bpm": 148,
-    "pattern": "rock",
+    "timeSignature": [4, 4],
+    "pattern": "brown-eyed-girl",
+    "youtubeId": "UfmkgQRmmeE",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "lyrics": [
+          "[G]Hey where did we [C]go",
+          "[G]Days when the [D]rains came"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "lyrics": [
+          "[D]My brown eyed [G]girl",
+          "[C]You my [D]brown eyed girl"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "G", "beats": 4},
       {"chord": "C", "beats": 4},
@@ -182,8 +506,52 @@
     "id": "wish-you-were-here",
     "title": "Wish You Were Here",
     "artist": "Pink Floyd",
+    "key": "G",
     "bpm": 62,
+    "timeSignature": [4, 4],
     "pattern": "wish-you-were-here",
+    "fingerpick": true,
+    "youtubeId": "IXdNnw99-Ic",
+    "sections": [
+      {
+        "name": "Intro",
+        "repeats": 1,
+        "progression": [
+          {"chord": "Em", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "Em", "beats": 4},
+          {"chord": "G", "beats": 4}
+        ]
+      },
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "C", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "Am", "beats": 4},
+          {"chord": "G", "beats": 4}
+        ],
+        "lyrics": [
+          "[C]So, so you think you can [D]tell",
+          "[Am]Heaven from [G]hell"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "C", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "Am", "beats": 4},
+          {"chord": "G", "beats": 4}
+        ],
+        "lyrics": [
+          "[C]How I wish, how I [D]wish you were here",
+          "[Am]We're just two lost [G]souls"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "Em", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -199,8 +567,37 @@
     "id": "bad-moon-rising",
     "title": "Bad Moon Rising",
     "artist": "Creedence Clearwater Revival",
+    "key": "D",
     "bpm": 176,
+    "timeSignature": [4, 4],
     "pattern": "bad-moon",
+    "youtubeId": "zUQiUFg5wOc",
+    "sections": [
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "lyrics": [
+          "[D]I see a [A]bad [G]moon a-[D]rising",
+          "[D]I see [A]trouble [G]on the [D]way"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 2,
+        "progression": [
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "A", "beats": 2},
+          {"chord": "G", "beats": 2},
+          {"chord": "D", "beats": 4}
+        ],
+        "lyrics": [
+          "[G]Don't go around tonight",
+          "[D]It's bound to take your life",
+          "[A]There's a [G]bad moon on the [D]rise"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "A", "beats": 2},
@@ -212,8 +609,21 @@
     "id": "twist-and-shout",
     "title": "Twist and Shout",
     "artist": "The Beatles",
+    "key": "D",
     "bpm": 128,
+    "timeSignature": [4, 4],
     "pattern": "twist-and-shout",
+    "youtubeId": "b-VAxGJdJeQ",
+    "sections": [
+      {
+        "name": "Chorus",
+        "repeats": 4,
+        "lyrics": [
+          "[D]Well shake it up [G]baby now",
+          "[A]Twist and [A]shout"
+        ]
+      }
+    ],
     "progression": [
       {"chord": "D", "beats": 4},
       {"chord": "G", "beats": 4},
@@ -225,8 +635,76 @@
     "id": "hotel-california",
     "title": "Hotel California",
     "artist": "Eagles",
+    "key": "Am",
     "bpm": 74,
+    "timeSignature": [4, 4],
     "pattern": "hotel-california",
+    "fingerpick": true,
+    "youtubeId": "09839DpTctU",
+    "sections": [
+      {
+        "name": "Intro",
+        "repeats": 1,
+        "progression": [
+          {"chord": "Am", "beats": 4},
+          {"chord": "E", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "Dm", "beats": 4},
+          {"chord": "E", "beats": 4}
+        ]
+      },
+      {
+        "name": "Verse",
+        "repeats": 2,
+        "progression": [
+          {"chord": "Am", "beats": 4},
+          {"chord": "E", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "Dm", "beats": 4},
+          {"chord": "E", "beats": 4}
+        ],
+        "lyrics": [
+          "[Am]On a dark desert [E]highway",
+          "[G]Cool wind in my [D]hair",
+          "[F]Warm smell of co[C]litas",
+          "[Dm]Rising up through the [E]air"
+        ]
+      },
+      {
+        "name": "Chorus",
+        "repeats": 1,
+        "progression": [
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "E", "beats": 4},
+          {"chord": "Am", "beats": 4}
+        ],
+        "lyrics": [
+          "[F]Welcome to the Hotel [C]Cali[E]fornia",
+          "[Am]Such a lovely place"
+        ]
+      },
+      {
+        "name": "Outro",
+        "repeats": 2,
+        "progression": [
+          {"chord": "Am", "beats": 4},
+          {"chord": "E", "beats": 4},
+          {"chord": "G", "beats": 4},
+          {"chord": "D", "beats": 4},
+          {"chord": "F", "beats": 4},
+          {"chord": "C", "beats": 4},
+          {"chord": "Dm", "beats": 4},
+          {"chord": "E", "beats": 4}
+        ]
+      }
+    ],
     "progression": [
       {"chord": "Am", "beats": 4},
       {"chord": "E", "beats": 4},
@@ -236,14 +714,6 @@
       {"chord": "C", "beats": 4},
       {"chord": "Dm", "beats": 4},
       {"chord": "E", "beats": 4}
-    ],
-    "sections": [
-      {"name": "Intro", "repeats": 1},
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 1},
-      {"name": "Verse", "repeats": 2},
-      {"name": "Chorus", "repeats": 1},
-      {"name": "Outro", "repeats": 2}
     ]
   }
 ]
