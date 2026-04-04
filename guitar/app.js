@@ -1444,7 +1444,6 @@ class App {
 
     // Welcome overlay buttons
     document.getElementById('welcome-play').addEventListener('click', async () => {
-      this.playPreviewStrum();
       const hasCam = await this.ensureCamera();
       if (hasCam && !this.calibrated) {
         // Camera ready — calibrate strum zone, then auto-start playback
@@ -1457,7 +1456,6 @@ class App {
       }
     });
     document.getElementById('welcome-demo').addEventListener('click', async () => {
-      this.playPreviewStrum();
       await this.toggleAuto();
     });
     document.getElementById('welcome-more-options').addEventListener('click', () => {
