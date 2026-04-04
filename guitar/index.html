@@ -21,7 +21,7 @@
       <div id="top-bar">
         <div class="title-group">
           <h1>Air Guitar</h1>
-          <p class="tagline">Play guitar with just your hands</p>
+          <p class="tagline">Play guitar in the air</p>
         </div>
         <div class="bar-sep"></div>
 
@@ -35,13 +35,13 @@
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="strum-setup-group">
-          <button id="calibrate-btn" class="bar-btn" title="Set up your strum area on camera">Calibrate</button>
+          <button id="calibrate-btn" class="bar-btn" title="Register your object and set up strum area">Calibrate</button>
         </div>
         <div class="bar-sep"></div>
 
         <div class="bar-group" id="play-group">
           <div class="playback-group">
-            <button id="play-btn" title="Start the song — strum along with your hand">Play</button>
+            <button id="play-btn" title="Start the song — strum along with your object">Play</button>
             <button id="auto-btn" title="Watch a demo — the app plays for you">Demo</button>
           </div>
           <div class="speed-control bar-advanced hidden">
@@ -101,14 +101,15 @@
         <canvas id="guitar-canvas"></canvas>
         <div id="camera-pip" class="pip-hidden">
           <video id="camera" autoplay playsinline muted></video>
-          <span class="pip-label">Hand tracking</span>
+          <canvas id="pip-overlay"></canvas>
+          <span class="pip-label">Object tracking</span>
         </div>
         <div id="calibrate-overlay" class="hidden">
           <video id="calibrate-video" autoplay playsinline muted></video>
           <canvas id="calibrate-canvas"></canvas>
-          <div id="calibrate-hint">Click the TOP of your strum area</div>
+          <div id="calibrate-hint">Hold your <strong>colored object</strong> in view and <strong>click on it</strong></div>
           <button id="calibrate-reset" class="calibrate-reset-btn" style="display:none">Reset</button>
-          <button id="calibrate-skip" class="calibrate-skip-btn">Skip — use defaults</button>
+          <button id="calibrate-skip" class="calibrate-skip-btn">Skip — use keyboard instead</button>
         </div>
 
         <div id="lyrics-overlay" class="hidden">
@@ -139,18 +140,23 @@
               <button id="welcome-play" class="welcome-play-btn">&#9654; Start Playing</button>
               <button id="welcome-demo" class="welcome-demo-btn">&#9835; Watch &amp; Listen First</button>
             </div>
-            <p class="welcome-hint">Wave your hand or press <kbd>Space</kbd> to strum</p>
+            <p class="welcome-hint">Grab a <strong>red pen</strong> or any bright object to use as your pick — or press <kbd>Space</kbd> to strum</p>
 
             <div class="welcome-advanced hidden" id="welcome-advanced">
               <div class="welcome-steps">
                 <div class="welcome-step">
                   <div class="welcome-step-num">1</div>
-                  <div class="welcome-step-text">Set up your camera<br><button id="welcome-calibrate" class="welcome-link">Calibrate strum area</button><br><button id="welcome-skip-cal" class="welcome-skip-link">or skip — use defaults</button></div>
+                  <div class="welcome-step-text">Grab a bright object<br><span class="welcome-kb-hint">A red pen works great</span></div>
                 </div>
                 <div class="welcome-step-arrow">&rarr;</div>
                 <div class="welcome-step">
                   <div class="welcome-step-num">2</div>
-                  <div class="welcome-step-text">Strum with your hand<br><span class="welcome-kb-hint">or press <kbd>Space</kbd></span></div>
+                  <div class="welcome-step-text">Register &amp; calibrate<br><button id="welcome-calibrate" class="welcome-link">Set up now</button><br><button id="welcome-skip-cal" class="welcome-skip-link">or skip — use keyboard</button></div>
+                </div>
+                <div class="welcome-step-arrow">&rarr;</div>
+                <div class="welcome-step">
+                  <div class="welcome-step-num">3</div>
+                  <div class="welcome-step-text">Strum with your object<br><span class="welcome-kb-hint">or press <kbd>Space</kbd></span></div>
                 </div>
               </div>
               <div class="welcome-zones">
@@ -166,7 +172,7 @@
                     <span class="zone-label">Down + Up</span>
                   </div>
                 </div>
-                <span class="zone-hint">Move your hand left or right on the guitar body to switch</span>
+                <span class="zone-hint">Move your object left or right on the guitar body to switch</span>
               </div>
               <div class="welcome-pattern" id="welcome-pattern">
                 <span class="welcome-pattern-label">Strum Pattern</span>

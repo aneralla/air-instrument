@@ -242,30 +242,60 @@ class GuitarAudio {
   }
 }
 
-// ── Hand tracker ────────────────────────────────────────────
+// ── RGB → HSV ──────────────────────────────────────────────
 
-class HandTracker {
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h * 360, s, v]; // h: 0-360, s: 0-1, v: 0-1
+}
+
+// ── Object tracker (color + blob detection) ────────────────
+
+class ObjectTracker {
   constructor(video) {
     this.video = video;
-    this.landmarker = null;
+    this.registered = false;
+    this.targetHSV = null;   // { h, s, v }
+    this.hueTol = 20;        // ± degrees
+    this.satTol = 0.35;
+    this.valTol = 0.35;
+    // Processing canvas — 240×180 balances accuracy vs speed
+    this.procW = 240;
+    this.procH = 180;
+    this.procCanvas = document.createElement('canvas');
+    this.procCanvas.width = this.procW;
+    this.procCanvas.height = this.procH;
+    this.procCtx = this.procCanvas.getContext('2d', { willReadFrequently: true });
+    // Binary mask for blob detection (1 byte per pixel)
+    this.mask = new Uint8Array(this.procW * this.procH);
+    // Blob label buffer for connected components
+    this.labels = new Int32Array(this.procW * this.procH);
+    // Tracking state
+    this.lastPos = null;     // last known normalized { x, y }
+    this.lastBlobSize = 0;   // pixel count of last detected blob
+    this.refBlobSize = 0;    // expected blob size (set during registration)
+    this.smoothing = 0.3;
+    this.roiPad = 0.15;      // ROI padding (fraction of canvas) around last pos
+    this.lostFrames = 0;     // consecutive frames with no detection
+    this.maxLostFrames = 8;  // after this many, do full-frame search
+    // Template: small image patch captured at registration for fallback matching
+    this.template = null;    // { data, w, h } — ImageData of the object
+    this.templateW = 32;
+    this.templateH = 32;
   }
 
   async init() {
-    const v = await import(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-    );
-    const fs = await v.FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-    );
-    this.landmarker = await v.HandLandmarker.createFromOptions(fs, {
-      baseOptions: {
-        modelAssetPath:
-          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: 1,
-    });
+    // No external dependencies — pure canvas tracking
   }
 
   async startCamera() {
@@ -276,12 +306,282 @@ class HandTracker {
     await new Promise((r) => { this.video.onloadeddata = r; });
   }
 
+  /**
+   * Register the object: sample its HSV color and capture a template patch.
+   * videoEl: the <video> element showing the camera feed.
+   * normX, normY: click position as fractions 0-1.
+   */
+  registerFromVideo(videoEl, normX, normY) {
+    const tmpCanvas = document.createElement('canvas');
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    tmpCanvas.width = vw;
+    tmpCanvas.height = vh;
+    const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(videoEl, 0, 0);
+
+    const px = Math.round(normX * vw);
+    const py = Math.round(normY * vh);
+
+    // ── Sample HSV color from a region around the click ──
+    const sampleR = 14;
+    const sx0 = Math.max(0, px - sampleR);
+    const sy0 = Math.max(0, py - sampleR);
+    const sw = Math.min(vw, px + sampleR) - sx0;
+    const sh = Math.min(vh, py + sampleR) - sy0;
+    if (sw <= 0 || sh <= 0) return null;
+
+    const sData = ctx.getImageData(sx0, sy0, sw, sh).data;
+    const hues = [], sats = [], vals = [];
+
+    for (let i = 0; i < sData.length; i += 4) {
+      const hsv = rgbToHsv(sData[i], sData[i + 1], sData[i + 2]);
+      if (hsv[1] > 0.12 && hsv[2] > 0.12) {
+        hues.push(hsv[0]);
+        sats.push(hsv[1]);
+        vals.push(hsv[2]);
+      }
+    }
+    if (hues.length < 4) return null;
+
+    hues.sort((a, b) => a - b);
+    sats.sort((a, b) => a - b);
+    vals.sort((a, b) => a - b);
+    const mid = Math.floor(hues.length / 2);
+    this.targetHSV = { h: hues[mid], s: sats[mid], v: vals[mid] };
+
+    // ── Capture a template patch for fallback matching ──
+    const tw = this.templateW, th = this.templateH;
+    const tx0 = Math.max(0, px - tw / 2);
+    const ty0 = Math.max(0, py - th / 2);
+    const tcw = Math.min(vw - tx0, tw);
+    const tch = Math.min(vh - ty0, th);
+    this.template = ctx.getImageData(tx0, ty0, tcw, tch);
+
+    // ── Estimate initial blob size (how many matching pixels at registration) ──
+    // Run a quick color match on the proc canvas to set refBlobSize
+    this.procCtx.drawImage(videoEl, 0, 0, this.procW, this.procH);
+    const procData = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
+    let matchCount = 0;
+    const { h: tH, s: tS, v: tV } = this.targetHSV;
+    for (let i = 0; i < procData.length; i += 4) {
+      const hsv = rgbToHsv(procData[i], procData[i + 1], procData[i + 2]);
+      let hDist = Math.abs(hsv[0] - tH);
+      if (hDist > 180) hDist = 360 - hDist;
+      if (hDist <= this.hueTol &&
+          hsv[1] >= Math.max(0, tS - this.satTol) &&
+          hsv[2] >= Math.max(0, tV - this.valTol)) {
+        matchCount++;
+      }
+    }
+    this.refBlobSize = Math.max(20, matchCount);
+
+    this.registered = true;
+    this.lastPos = null;
+    this.lastBlobSize = 0;
+    this.lostFrames = 0;
+
+    return this.targetHSV;
+  }
+
+  getRegisteredColorCSS() {
+    if (!this.targetHSV) return '#fff';
+    const { h, s, v } = this.targetHSV;
+    return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(v * 50)}%)`;
+  }
+
+  /**
+   * Build a binary mask of color-matching pixels within an ROI.
+   * roi: { x0, y0, x1, y1 } in pixel coords, or null for full frame.
+   * Returns the number of matching pixels.
+   */
+  _buildMask(data, roi) {
+    const W = this.procW, H = this.procH;
+    const mask = this.mask;
+    const { h: th, s: ts, v: tv } = this.targetHSV;
+    const hTol = this.hueTol;
+    const sMin = Math.max(0, ts - this.satTol);
+    const vMin = Math.max(0, tv - this.valTol);
+
+    const rx0 = roi ? roi.x0 : 0;
+    const ry0 = roi ? roi.y0 : 0;
+    const rx1 = roi ? roi.x1 : W;
+    const ry1 = roi ? roi.y1 : H;
+
+    let count = 0;
+    // Clear entire mask if doing ROI (previous values might linger)
+    if (roi) mask.fill(0);
+
+    for (let y = ry0; y < ry1; y++) {
+      for (let x = rx0; x < rx1; x++) {
+        const idx = y * W + x;
+        const i = idx * 4;
+        const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+
+        let hDist = Math.abs(hsv[0] - th);
+        if (hDist > 180) hDist = 360 - hDist;
+
+        if (hDist <= hTol && hsv[1] >= sMin && hsv[2] >= vMin) {
+          mask[idx] = 1;
+          count++;
+        } else {
+          mask[idx] = 0;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Connected component labeling (two-pass) on the binary mask.
+   * Returns array of { sumX, sumY, count } per label (index 0 unused).
+   */
+  _findBlobs(roi) {
+    const W = this.procW, H = this.procH;
+    const mask = this.mask;
+    const labels = this.labels;
+    labels.fill(0);
+
+    const rx0 = roi ? roi.x0 : 0;
+    const ry0 = roi ? roi.y0 : 0;
+    const rx1 = roi ? roi.x1 : W;
+    const ry1 = roi ? roi.y1 : H;
+
+    let nextLabel = 1;
+    // Union-Find with path compression
+    const parent = [0]; // parent[0] unused
+
+    const find = (a) => {
+      while (parent[a] !== a) {
+        parent[a] = parent[parent[a]];
+        a = parent[a];
+      }
+      return a;
+    };
+    const union = (a, b) => {
+      a = find(a); b = find(b);
+      if (a !== b) parent[Math.max(a, b)] = Math.min(a, b);
+    };
+
+    // Pass 1: assign provisional labels
+    for (let y = ry0; y < ry1; y++) {
+      for (let x = rx0; x < rx1; x++) {
+        const idx = y * W + x;
+        if (!mask[idx]) continue;
+
+        const above = (y > ry0) ? labels[(y - 1) * W + x] : 0;
+        const left = (x > rx0) ? labels[y * W + (x - 1)] : 0;
+
+        if (above === 0 && left === 0) {
+          labels[idx] = nextLabel;
+          parent.push(nextLabel);
+          nextLabel++;
+        } else if (above !== 0 && left === 0) {
+          labels[idx] = above;
+        } else if (above === 0 && left !== 0) {
+          labels[idx] = left;
+        } else {
+          labels[idx] = Math.min(above, left);
+          if (above !== left) union(above, left);
+        }
+      }
+    }
+
+    // Pass 2: resolve labels and accumulate blob stats
+    const blobs = new Map(); // rootLabel → { sumX, sumY, count }
+    for (let y = ry0; y < ry1; y++) {
+      for (let x = rx0; x < rx1; x++) {
+        const idx = y * W + x;
+        if (!labels[idx]) continue;
+        const root = find(labels[idx]);
+        labels[idx] = root;
+        let blob = blobs.get(root);
+        if (!blob) { blob = { sumX: 0, sumY: 0, count: 0 }; blobs.set(root, blob); }
+        blob.sumX += x;
+        blob.sumY += y;
+        blob.count++;
+      }
+    }
+
+    return blobs;
+  }
+
+  /**
+   * Find the best blob: largest one that's within a reasonable size range.
+   */
+  _bestBlob(blobs) {
+    let best = null;
+    const minSize = 6;
+    // Accept blobs from minSize up to 5x the reference size
+    const maxSize = this.refBlobSize > 0 ? this.refBlobSize * 5 : Infinity;
+
+    for (const blob of blobs.values()) {
+      if (blob.count < minSize) continue;
+      if (blob.count > maxSize) continue;
+      if (!best || blob.count > best.count) best = blob;
+    }
+    return best;
+  }
+
+  /**
+   * Detect the registered object. Returns normalized { x, y } or null.
+   * Uses ROI around last position for speed; falls back to full-frame search.
+   */
   detect() {
-    if (!this.landmarker || !this.video.videoWidth) return null;
-    const res = this.landmarker.detectForVideo(this.video, performance.now());
-    if (!res.landmarks || !res.landmarks.length) return null;
-    const tip = res.landmarks[0][8];
-    return { x: tip.x, y: tip.y };
+    if (!this.registered || !this.video.videoWidth) return null;
+
+    const ctx = this.procCtx;
+    ctx.drawImage(this.video, 0, 0, this.procW, this.procH);
+    const data = ctx.getImageData(0, 0, this.procW, this.procH).data;
+
+    let roi = null;
+    // If we have a recent position and haven't lost track for too long, use ROI
+    if (this.lastPos && this.lostFrames < this.maxLostFrames) {
+      const pad = this.roiPad;
+      // Widen ROI if we've lost the object for a few frames
+      const expandedPad = pad + this.lostFrames * 0.02;
+      roi = {
+        x0: Math.max(0, Math.floor((this.lastPos.x - expandedPad) * this.procW)),
+        y0: Math.max(0, Math.floor((this.lastPos.y - expandedPad) * this.procH)),
+        x1: Math.min(this.procW, Math.ceil((this.lastPos.x + expandedPad) * this.procW)),
+        y1: Math.min(this.procH, Math.ceil((this.lastPos.y + expandedPad) * this.procH)),
+      };
+    }
+
+    // Build color mask and find connected blobs
+    this._buildMask(data, roi);
+    let blobs = this._findBlobs(roi);
+    let best = this._bestBlob(blobs);
+
+    // If ROI search failed, try full-frame search
+    if (!best && roi) {
+      this._buildMask(data, null);
+      blobs = this._findBlobs(null);
+      best = this._bestBlob(blobs);
+    }
+
+    if (!best) {
+      this.lostFrames++;
+      return null;
+    }
+
+    this.lostFrames = 0;
+    this.lastBlobSize = best.count;
+
+    const rawX = (best.sumX / best.count) / this.procW;
+    const rawY = (best.sumY / best.count) / this.procH;
+
+    // Smooth to reduce jitter
+    if (this.lastPos) {
+      const s = this.smoothing;
+      this.lastPos = {
+        x: this.lastPos.x * s + rawX * (1 - s),
+        y: this.lastPos.y * s + rawY * (1 - s),
+      };
+    } else {
+      this.lastPos = { x: rawX, y: rawY };
+    }
+
+    return { x: this.lastPos.x, y: this.lastPos.y };
   }
 }
 
@@ -1340,7 +1640,7 @@ class App {
 
   async init() {
     const video = document.getElementById('camera');
-    this.tracker = new HandTracker(video);
+    this.tracker = new ObjectTracker(video);
 
     const imgPromise = new Promise((resolve, reject) => {
       const img = new Image();
@@ -2194,6 +2494,17 @@ class App {
   }
 
   resetCalibration() {
+    if (this._calTrackingRAF) {
+      cancelAnimationFrame(this._calTrackingRAF);
+      this._calTrackingRAF = null;
+    }
+    this._calTopPxY = null;
+    this.tracker.registered = false;
+    this.tracker.targetHSV = null;
+    this.tracker.lastPos = null;
+    this.tracker.lostFrames = 0;
+    this.tracker.template = null;
+    this.tracker.refBlobSize = 0;
     const canvas = document.getElementById('calibrate-canvas');
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -2201,7 +2512,8 @@ class App {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
     this.calibrateStep = 0;
-    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+    document.getElementById('calibrate-hint').innerHTML =
+      'Hold your <strong>colored object</strong> in view and <strong>click on it</strong>';
     document.getElementById('calibrate-reset').style.display = 'none';
   }
 
@@ -2220,11 +2532,42 @@ class App {
 
   showCameraPip() {
     const pip = document.getElementById('camera-pip');
-    if (this.cameraAvailable && this.calibrated) {
+    if (this.cameraAvailable && this.calibrated && this.tracker.registered) {
       pip.style.display = '';
       pip.classList.remove('pip-hidden');
       pip.classList.add('pip-visible');
+      // Size the PIP overlay canvas
+      const overlay = document.getElementById('pip-overlay');
+      if (overlay) {
+        overlay.width = 160;
+        overlay.height = 120;
+      }
     }
+  }
+
+  _drawPipDot(pos) {
+    const overlay = document.getElementById('pip-overlay');
+    if (!overlay) return;
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    const x = pos.x * overlay.width;
+    const y = pos.y * overlay.height;
+    const color = this.tracker.getRegisteredColorCSS();
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  _clearPipDot() {
+    const overlay = document.getElementById('pip-overlay');
+    if (!overlay) return;
+    overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
   }
 
   async togglePlay() {
@@ -2357,7 +2700,64 @@ class App {
 
     this.calibrating = true;
     this.calibrateStep = 0;
-    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+    this._calTrackingRAF = null;
+
+    if (this.tracker.registered) {
+      // Object already registered — skip to strum zone calibration
+      this.calibrateStep = 1;
+      document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+      this._startCalTrackingLoop();
+    } else {
+      document.getElementById('calibrate-hint').innerHTML =
+        'Hold your <strong>colored object</strong> in view and <strong>click on it</strong>';
+    }
+  }
+
+  /** Animate tracked object position on the calibration overlay. */
+  _startCalTrackingLoop() {
+    const calCanvas = document.getElementById('calibrate-canvas');
+    const rect = calCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = calCanvas.getContext('2d');
+
+    const drawLoop = () => {
+      if (!this.calibrating) return;
+      const pos = this.tracker.detect();
+      // Redraw: clear then re-draw any strum lines, then the tracking dot
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      // Re-draw strum top line if set
+      if (this._calTopPxY != null) {
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, this._calTopPxY);
+        ctx.lineTo(rect.width, this._calTopPxY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Top', 8, this._calTopPxY - 4);
+      }
+      if (pos) {
+        const dotX = pos.x * rect.width;
+        const dotY = pos.y * rect.height;
+        const color = this.tracker.getRegisteredColorCSS();
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, 10, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      this._calTrackingRAF = requestAnimationFrame(drawLoop);
+    };
+    drawLoop();
   }
 
   handleCalibrationClick(e) {
@@ -2365,6 +2765,7 @@ class App {
 
     const canvas = document.getElementById('calibrate-canvas');
     const rect = canvas.getBoundingClientRect();
+    const clickX = (e.clientX - rect.left) / rect.width;
     const clickY = (e.clientY - rect.top) / rect.height;
 
     const dpr = window.devicePixelRatio || 1;
@@ -2372,46 +2773,71 @@ class App {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pxY = e.clientY - rect.top;
 
+    // Step 0: Register object color
     if (this.calibrateStep === 0) {
-      this.strumCamTop = clickY;
-      ctx.strokeStyle = 'rgba(0, 212, 255, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(0, pxY);
-      ctx.lineTo(rect.width, pxY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
-      ctx.font = '12px Inter, sans-serif';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText('Top', 8, pxY - 4);
+      const calVideo = document.getElementById('calibrate-video');
+      const hsv = this.tracker.registerFromVideo(calVideo, clickX, clickY);
+      if (!hsv) {
+        document.getElementById('calibrate-hint').textContent =
+          'Could not read color — try clicking directly on your object';
+        return;
+      }
+      // Show confirmation with a color swatch
+      const color = this.tracker.getRegisteredColorCSS();
+      document.getElementById('calibrate-hint').innerHTML =
+        `Tracking <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span> — now click the <strong>TOP</strong> of your strum area`;
       this.calibrateStep = 1;
-      document.getElementById('calibrate-hint').textContent = 'Click the BOTTOM of your strum area';
       document.getElementById('calibrate-reset').style.display = '';
-    } else {
-      this.strumCamBottom = Math.max(clickY, this.strumCamTop + 0.05);
-
-      ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(0, pxY);
-      ctx.lineTo(rect.width, pxY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
-      ctx.font = '12px Inter, sans-serif';
-      ctx.textBaseline = 'top';
-      ctx.fillText('Bottom', 8, pxY + 4);
-
-      document.getElementById('calibrate-hint').textContent = 'Calibrated! Closing...';
-      this.calibrated = true;
-      setTimeout(() => this.finishCalibration(), 600);
+      this._calTopPxY = null;
+      this._startCalTrackingLoop();
+      return;
     }
+
+    // Step 1: Set strum zone top
+    if (this.calibrateStep === 1) {
+      this.strumCamTop = clickY;
+      this._calTopPxY = pxY;
+      const color = this.tracker.getRegisteredColorCSS();
+      document.getElementById('calibrate-hint').innerHTML =
+        `Tracking <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span> — now click the <strong>BOTTOM</strong> of your strum area`;
+      this.calibrateStep = 2;
+      return;
+    }
+
+    // Step 2: Set strum zone bottom → done
+    this.strumCamBottom = Math.max(clickY, this.strumCamTop + 0.05);
+
+    if (this._calTrackingRAF) {
+      cancelAnimationFrame(this._calTrackingRAF);
+      this._calTrackingRAF = null;
+    }
+    this._calTopPxY = null;
+
+    // Draw final bottom line
+    ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, pxY);
+    ctx.lineTo(rect.width, pxY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Bottom', 8, pxY + 4);
+
+    document.getElementById('calibrate-hint').textContent = 'All set! Starting...';
+    this.calibrated = true;
+    setTimeout(() => this.finishCalibration(), 600);
   }
 
   finishCalibration() {
+    if (this._calTrackingRAF) {
+      cancelAnimationFrame(this._calTrackingRAF);
+      this._calTrackingRAF = null;
+    }
+    this._calTopPxY = null;
     document.getElementById('calibrate-overlay').classList.add('hidden');
     document.getElementById('calibrate-reset').style.display = 'none';
     const btn = document.getElementById('calibrate-btn');
@@ -2729,12 +3155,15 @@ class App {
       if (t >= 1) this.autoStrum.active = false;
     }
 
-    if (!this.autoMode && this.cameraAvailable) {
+    if (!this.autoMode && this.cameraAvailable && this.tracker.registered) {
       const hand = this.tracker.detect();
       if (hand) {
         cursor = this.processStrum(hand);
+        // Draw tracking dot on PIP overlay
+        this._drawPipDot(hand);
       } else {
         this.handState.active = false;
+        this._clearPipDot();
       }
     }
 
