@@ -1444,16 +1444,12 @@ class App {
 
     // Welcome overlay buttons
     document.getElementById('welcome-play').addEventListener('click', async () => {
-      // Play a preview strum for instant gratification, then start
       this.playPreviewStrum();
-      if (!this.calibrated) {
-        this.useDefaultCalibration();
-      }
+      // Request camera, then start with defaults (no manual calibration step)
+      const hasCam = await this.ensureCamera();
+      if (!this.calibrated) this.useDefaultCalibration();
       await this.togglePlay();
-      // Start camera in background for hand tracking (non-blocking)
-      this.ensureCamera().then(hasCam => {
-        if (hasCam) this.showCameraPip();
-      });
+      if (hasCam) this.showCameraPip();
     });
     document.getElementById('welcome-demo').addEventListener('click', async () => {
       this.playPreviewStrum();
