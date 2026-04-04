@@ -1445,11 +1445,16 @@ class App {
     // Welcome overlay buttons
     document.getElementById('welcome-play').addEventListener('click', async () => {
       this.playPreviewStrum();
-      // Request camera, then start with defaults (no manual calibration step)
       const hasCam = await this.ensureCamera();
-      if (!this.calibrated) this.useDefaultCalibration();
-      await this.togglePlay();
-      if (hasCam) this.showCameraPip();
+      if (hasCam && !this.calibrated) {
+        // Camera ready — calibrate strum zone, then auto-start playback
+        this.playAfterCalibration = true;
+        this.startCalibration();
+      } else {
+        // No camera — use keyboard/click mode with defaults
+        if (!this.calibrated) this.useDefaultCalibration();
+        await this.togglePlay();
+      }
     });
     document.getElementById('welcome-demo').addEventListener('click', async () => {
       this.playPreviewStrum();
@@ -2419,6 +2424,11 @@ class App {
       this.completeStep(2);
       this.updateWelcome();
       this.showCameraPip();
+      // Auto-start playback if triggered from "Start Playing"
+      if (this.playAfterCalibration) {
+        this.playAfterCalibration = false;
+        this.togglePlay();
+      }
     }
   }
 
