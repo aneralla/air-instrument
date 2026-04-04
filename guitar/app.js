@@ -387,6 +387,111 @@ class ObjectTracker {
     return this.targetHSV;
   }
 
+  /**
+   * Register from a user-drawn rectangle (normalized 0-1 coords).
+   * Much more robust than a single click — samples the entire region.
+   */
+  registerFromRegion(videoEl, nx0, ny0, nx1, ny1) {
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = vw; tmpCanvas.height = vh;
+    const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(videoEl, 0, 0);
+
+    // Pixel bounds of the drawn box
+    const bx0 = Math.round(nx0 * vw), by0 = Math.round(ny0 * vh);
+    const bx1 = Math.round(nx1 * vw), by1 = Math.round(ny1 * vh);
+    const bw = bx1 - bx0, bh = by1 - by0;
+    if (bw < 4 || bh < 4) return null;
+
+    // ── Sample HSV from ALL pixels inside the box ──
+    const boxData = ctx.getImageData(bx0, by0, bw, bh).data;
+    const hues = [], sats = [], vals = [];
+    for (let i = 0; i < boxData.length; i += 4) {
+      const hsv = rgbToHsv(boxData[i], boxData[i + 1], boxData[i + 2]);
+      if (hsv[1] > 0.08 && hsv[2] > 0.08) {
+        hues.push(hsv[0]); sats.push(hsv[1]); vals.push(hsv[2]);
+      }
+    }
+    if (hues.length < 8) return null;
+
+    hues.sort((a, b) => a - b);
+    sats.sort((a, b) => a - b);
+    vals.sort((a, b) => a - b);
+    const mid = Math.floor(hues.length / 2);
+    const q1 = Math.floor(hues.length * 0.25);
+    const q3 = Math.floor(hues.length * 0.75);
+
+    this.targetHSV = { h: hues[mid], s: sats[mid], v: vals[mid] };
+
+    // ── Tight tolerances from IQR ──
+    const hIQR = hues[q3] - hues[q1];
+    const sIQR = sats[q3] - sats[q1];
+    const vIQR = vals[q3] - vals[q1];
+    this.hueTol = Math.max(8, Math.min(25, hIQR * 1.5 + 6));
+    this.satMin = Math.max(0, this.targetHSV.s - Math.max(0.10, sIQR * 1.5));
+    this.valMin = Math.max(0, this.targetHSV.v - Math.max(0.10, vIQR * 1.5));
+
+    // ── Sample background just outside the box to learn what to exclude ──
+    // Expand the box by 8px on each side and sample the border ring
+    const margin = 8;
+    const ox0 = Math.max(0, bx0 - margin), oy0 = Math.max(0, by0 - margin);
+    const ox1 = Math.min(vw, bx1 + margin), oy1 = Math.min(vh, by1 + margin);
+    const outerData = ctx.getImageData(ox0, oy0, ox1 - ox0, oy1 - oy0).data;
+    const outerW = ox1 - ox0;
+    const bgHues = [];
+    for (let y = 0; y < oy1 - oy0; y++) {
+      for (let x = 0; x < outerW; x++) {
+        // Only sample pixels in the outer ring (not inside the box)
+        const absX = ox0 + x, absY = oy0 + y;
+        if (absX >= bx0 && absX < bx1 && absY >= by0 && absY < by1) continue;
+        const i = (y * outerW + x) * 4;
+        const hsv = rgbToHsv(outerData[i], outerData[i + 1], outerData[i + 2]);
+        if (hsv[1] > 0.08 && hsv[2] > 0.08) bgHues.push(hsv[0]);
+      }
+    }
+    // If background has similar hue, tighten the hue tolerance further
+    if (bgHues.length > 10) {
+      bgHues.sort((a, b) => a - b);
+      const bgMedianH = bgHues[Math.floor(bgHues.length / 2)];
+      let bgDist = Math.abs(bgMedianH - this.targetHSV.h);
+      if (bgDist > 180) bgDist = 360 - bgDist;
+      if (bgDist < this.hueTol * 1.5) {
+        // Background is close in hue — tighten tolerance to half the distance
+        this.hueTol = Math.max(6, Math.min(this.hueTol, bgDist * 0.4));
+      }
+    }
+
+    // ── Capture template from the box region ──
+    this.template = ctx.getImageData(bx0, by0, bw, bh);
+    this.templateW = bw;
+    this.templateH = bh;
+
+    // ── Seed position at the box center ──
+    this.lastPos = { x: (nx0 + nx1) / 2, y: (ny0 + ny1) / 2 };
+
+    // ── Measure reference blob size on the proc canvas ──
+    this.procCtx.drawImage(videoEl, 0, 0, this.procW, this.procH);
+    const pd = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
+    const cx = (nx0 + nx1) / 2, cy = (ny0 + ny1) / 2;
+    const regRoi = {
+      x0: Math.max(0, Math.floor(cx * this.procW - 50)),
+      y0: Math.max(0, Math.floor(cy * this.procH - 50)),
+      x1: Math.min(this.procW, Math.ceil(cx * this.procW + 50)),
+      y1: Math.min(this.procH, Math.ceil(cy * this.procH + 50)),
+    };
+    this._buildMask(pd, regRoi);
+    const regBlobs = this._findBlobs(regRoi);
+    const clickBlob = this._closestBlob(regBlobs, cx, cy, 4);
+    this.refBlobSize = clickBlob ? clickBlob.count : 30;
+
+    this.registered = true;
+    this.lastBlobSize = this.refBlobSize;
+    this.lostFrames = 0;
+
+    return this.targetHSV;
+  }
+
   getRegisteredColorCSS() {
     if (!this.targetHSV) return '#fff';
     const { h, s, v } = this.targetHSV;
@@ -1756,7 +1861,25 @@ class App {
     });
 
     const calCanvas = document.getElementById('calibrate-canvas');
-    calCanvas.addEventListener('click', (e) => this.handleCalibrationClick(e));
+    // Draw-a-box for object registration (step 0), click for strum zones (steps 1-2)
+    this._calDrag = null; // { startX, startY } in normalized coords during drag
+    calCanvas.addEventListener('mousedown', (e) => this._onCalMouseDown(e));
+    calCanvas.addEventListener('mousemove', (e) => this._onCalMouseMove(e));
+    calCanvas.addEventListener('mouseup', (e) => this._onCalMouseUp(e));
+    // Touch support for mobile
+    calCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this._onCalMouseDown(e.touches[0]);
+    }, { passive: false });
+    calCanvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      this._onCalMouseMove(e.touches[0]);
+    }, { passive: false });
+    calCanvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      this._onCalMouseUp(t);
+    }, { passive: false });
 
     document.querySelectorAll('.color-swatch').forEach((s) => {
       s.addEventListener('click', () => {
@@ -2559,7 +2682,7 @@ class App {
     ctx.clearRect(0, 0, rect.width, rect.height);
     this.calibrateStep = 0;
     document.getElementById('calibrate-hint').innerHTML =
-      'Hold your <strong>colored object</strong> in view and <strong>click on it</strong>';
+      '<strong>Draw a box</strong> around your object';
     document.getElementById('calibrate-reset').style.display = 'none';
   }
 
@@ -2755,7 +2878,7 @@ class App {
       this._startCalTrackingLoop();
     } else {
       document.getElementById('calibrate-hint').innerHTML =
-        'Hold your <strong>colored object</strong> in view and <strong>click on it</strong>';
+        '<strong>Draw a box</strong> around your object';
     }
   }
 
@@ -2806,29 +2929,95 @@ class App {
     drawLoop();
   }
 
-  handleCalibrationClick(e) {
+  _onCalMouseDown(e) {
     if (!this.calibrating) return;
-
     const canvas = document.getElementById('calibrate-canvas');
     const rect = canvas.getBoundingClientRect();
-    const clickX = (e.clientX - rect.left) / rect.width;
-    const clickY = (e.clientY - rect.top) / rect.height;
+    const nx = (e.clientX - rect.left) / rect.width;
+    const ny = (e.clientY - rect.top) / rect.height;
 
+    if (this.calibrateStep === 0) {
+      // Start drawing a selection box
+      this._calDrag = { startX: nx, startY: ny, curX: nx, curY: ny };
+    }
+  }
+
+  _onCalMouseMove(e) {
+    if (!this.calibrating || this.calibrateStep !== 0 || !this._calDrag) return;
+    const canvas = document.getElementById('calibrate-canvas');
+    const rect = canvas.getBoundingClientRect();
+    this._calDrag.curX = (e.clientX - rect.left) / rect.width;
+    this._calDrag.curY = (e.clientY - rect.top) / rect.height;
+
+    // Draw the selection rectangle
     const dpr = window.devicePixelRatio || 1;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const pxY = e.clientY - rect.top;
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // Step 0: Register object color
+    const d = this._calDrag;
+    const x = Math.min(d.startX, d.curX) * rect.width;
+    const y = Math.min(d.startY, d.curY) * rect.height;
+    const w = Math.abs(d.curX - d.startX) * rect.width;
+    const h = Math.abs(d.curY - d.startY) * rect.height;
+
+    // Dim area outside the selection
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.clearRect(x, y, w, h);
+
+    // Draw selection border
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Corner handles
+    const hs = 5;
+    ctx.fillStyle = '#00d4ff';
+    for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+      ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2);
+    }
+  }
+
+  _onCalMouseUp(e) {
+    if (!this.calibrating) return;
+    const canvas = document.getElementById('calibrate-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const nx = (e.clientX - rect.left) / rect.width;
+    const ny = (e.clientY - rect.top) / rect.height;
+
+    // Step 0: Finish drawing selection box → register object
     if (this.calibrateStep === 0) {
-      const calVideo = document.getElementById('calibrate-video');
-      const hsv = this.tracker.registerFromVideo(calVideo, clickX, clickY);
-      if (!hsv) {
-        document.getElementById('calibrate-hint').textContent =
-          'Could not read color — try clicking directly on your object';
-        return;
+      if (!this._calDrag) return;
+      const d = this._calDrag;
+      this._calDrag = null;
+
+      const x0 = Math.min(d.startX, nx), y0 = Math.min(d.startY, ny);
+      const x1 = Math.max(d.startX, nx), y1 = Math.max(d.startY, ny);
+      const boxW = x1 - x0, boxH = y1 - y0;
+
+      // If the box is too small, treat as a click (backwards compat)
+      if (boxW < 0.02 || boxH < 0.02) {
+        const calVideo = document.getElementById('calibrate-video');
+        const hsv = this.tracker.registerFromVideo(calVideo, nx, ny);
+        if (!hsv) {
+          document.getElementById('calibrate-hint').textContent =
+            'Could not read color — draw a box around your object';
+          return;
+        }
+      } else {
+        // Register from the drawn rectangle
+        const calVideo = document.getElementById('calibrate-video');
+        const hsv = this.tracker.registerFromRegion(calVideo, x0, y0, x1, y1);
+        if (!hsv) {
+          document.getElementById('calibrate-hint').textContent =
+            'Could not read object — try drawing a tighter box';
+          return;
+        }
       }
-      // Show confirmation with a color swatch
+
       const color = this.tracker.getRegisteredColorCSS();
       document.getElementById('calibrate-hint').innerHTML =
         `Tracking <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span> — now click the <strong>TOP</strong> of your strum area`;
@@ -2839,9 +3028,14 @@ class App {
       return;
     }
 
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pxY = e.clientY - rect.top;
+
     // Step 1: Set strum zone top
     if (this.calibrateStep === 1) {
-      this.strumCamTop = clickY;
+      this.strumCamTop = ny;
       this._calTopPxY = pxY;
       const color = this.tracker.getRegisteredColorCSS();
       document.getElementById('calibrate-hint').innerHTML =
@@ -2851,7 +3045,7 @@ class App {
     }
 
     // Step 2: Set strum zone bottom → done
-    this.strumCamBottom = Math.max(clickY, this.strumCamTop + 0.05);
+    this.strumCamBottom = Math.max(ny, this.strumCamTop + 0.05);
 
     if (this._calTrackingRAF) {
       cancelAnimationFrame(this._calTrackingRAF);
@@ -2859,7 +3053,6 @@ class App {
     }
     this._calTopPxY = null;
 
-    // Draw final bottom line
     ctx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
