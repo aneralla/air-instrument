@@ -259,16 +259,17 @@ function rgbToHsv(r, g, b) {
   return [h * 360, s, v]; // h: 0-360, s: 0-1, v: 0-1
 }
 
-// ── Object tracker (color + blob detection) ────────────────
+// ── Object tracker (color + shape + template) ──────────────
 
 class ObjectTracker {
   constructor(video) {
     this.video = video;
     this.registered = false;
     this.targetHSV = null;   // { h, s, v }
-    this.hueTol = 20;        // ± degrees
-    this.satTol = 0.35;
-    this.valTol = 0.35;
+    // Tolerances — set dynamically from actual color variance at registration
+    this.hueTol = 15;
+    this.satMin = 0;
+    this.valMin = 0;
     // Processing canvas — 240×180 balances accuracy vs speed
     this.procW = 240;
     this.procH = 180;
@@ -276,27 +277,24 @@ class ObjectTracker {
     this.procCanvas.width = this.procW;
     this.procCanvas.height = this.procH;
     this.procCtx = this.procCanvas.getContext('2d', { willReadFrequently: true });
-    // Binary mask for blob detection (1 byte per pixel)
+    // Binary mask for blob detection
     this.mask = new Uint8Array(this.procW * this.procH);
-    // Blob label buffer for connected components
     this.labels = new Int32Array(this.procW * this.procH);
     // Tracking state
-    this.lastPos = null;     // last known normalized { x, y }
-    this.lastBlobSize = 0;   // pixel count of last detected blob
-    this.refBlobSize = 0;    // expected blob size (set during registration)
+    this.lastPos = null;
+    this.lastBlobSize = 0;
+    this.refBlobSize = 0;    // blob size at registration (on proc canvas)
     this.smoothing = 0.3;
-    this.roiPad = 0.15;      // ROI padding (fraction of canvas) around last pos
-    this.lostFrames = 0;     // consecutive frames with no detection
-    this.maxLostFrames = 8;  // after this many, do full-frame search
-    // Template: small image patch captured at registration for fallback matching
-    this.template = null;    // { data, w, h } — ImageData of the object
-    this.templateW = 32;
-    this.templateH = 32;
+    this.roiPad = 0.18;
+    this.lostFrames = 0;
+    this.maxLostFrames = 10;
+    // Template patch for visual verification of blob candidates
+    this.template = null;    // ImageData captured at registration
+    this.templateW = 40;
+    this.templateH = 40;
   }
 
-  async init() {
-    // No external dependencies — pure canvas tracking
-  }
+  async init() { /* no external deps */ }
 
   async startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -307,38 +305,33 @@ class ObjectTracker {
   }
 
   /**
-   * Register the object: sample its HSV color and capture a template patch.
-   * videoEl: the <video> element showing the camera feed.
-   * normX, normY: click position as fractions 0-1.
+   * Register the object from a click on the calibration video.
+   * Samples color, derives tight tolerances, captures a template, and
+   * seeds lastPos so the first detect() frame uses ROI near the click.
    */
   registerFromVideo(videoEl, normX, normY) {
-    const tmpCanvas = document.createElement('canvas');
     const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
-    tmpCanvas.width = vw;
-    tmpCanvas.height = vh;
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = vw; tmpCanvas.height = vh;
     const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(videoEl, 0, 0);
 
     const px = Math.round(normX * vw);
     const py = Math.round(normY * vh);
 
-    // ── Sample HSV color from a region around the click ──
-    const sampleR = 14;
-    const sx0 = Math.max(0, px - sampleR);
-    const sy0 = Math.max(0, py - sampleR);
-    const sw = Math.min(vw, px + sampleR) - sx0;
-    const sh = Math.min(vh, py + sampleR) - sy0;
+    // ── Sample HSV from a small region around the click ──
+    const R = 14;
+    const sx0 = Math.max(0, px - R), sy0 = Math.max(0, py - R);
+    const sw = Math.min(vw, px + R) - sx0;
+    const sh = Math.min(vh, py + R) - sy0;
     if (sw <= 0 || sh <= 0) return null;
 
     const sData = ctx.getImageData(sx0, sy0, sw, sh).data;
     const hues = [], sats = [], vals = [];
-
     for (let i = 0; i < sData.length; i += 4) {
       const hsv = rgbToHsv(sData[i], sData[i + 1], sData[i + 2]);
-      if (hsv[1] > 0.12 && hsv[2] > 0.12) {
-        hues.push(hsv[0]);
-        sats.push(hsv[1]);
-        vals.push(hsv[2]);
+      if (hsv[1] > 0.10 && hsv[2] > 0.10) {
+        hues.push(hsv[0]); sats.push(hsv[1]); vals.push(hsv[2]);
       }
     }
     if (hues.length < 4) return null;
@@ -347,37 +340,48 @@ class ObjectTracker {
     sats.sort((a, b) => a - b);
     vals.sort((a, b) => a - b);
     const mid = Math.floor(hues.length / 2);
+    const q1 = Math.floor(hues.length * 0.25);
+    const q3 = Math.floor(hues.length * 0.75);
+
     this.targetHSV = { h: hues[mid], s: sats[mid], v: vals[mid] };
 
-    // ── Capture a template patch for fallback matching ──
+    // ── Derive tolerances from IQR (tighter = fewer false positives) ──
+    const hIQR = hues[q3] - hues[q1];
+    const sIQR = sats[q3] - sats[q1];
+    const vIQR = vals[q3] - vals[q1];
+    this.hueTol = Math.max(10, Math.min(25, hIQR * 2 + 8));
+    this.satMin = Math.max(0, this.targetHSV.s - Math.max(0.12, sIQR * 2));
+    this.valMin = Math.max(0, this.targetHSV.v - Math.max(0.12, vIQR * 2));
+
+    // ── Capture template patch ──
     const tw = this.templateW, th = this.templateH;
-    const tx0 = Math.max(0, px - tw / 2);
-    const ty0 = Math.max(0, py - th / 2);
+    const tx0 = Math.max(0, Math.round(px - tw / 2));
+    const ty0 = Math.max(0, Math.round(py - th / 2));
     const tcw = Math.min(vw - tx0, tw);
     const tch = Math.min(vh - ty0, th);
     this.template = ctx.getImageData(tx0, ty0, tcw, tch);
 
-    // ── Estimate initial blob size (how many matching pixels at registration) ──
-    // Run a quick color match on the proc canvas to set refBlobSize
+    // ── Seed initial position from click so first ROI centers correctly ──
+    this.lastPos = { x: normX, y: normY };
+
+    // ── Measure reference blob size at registration ──
     this.procCtx.drawImage(videoEl, 0, 0, this.procW, this.procH);
-    const procData = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
-    let matchCount = 0;
-    const { h: tH, s: tS, v: tV } = this.targetHSV;
-    for (let i = 0; i < procData.length; i += 4) {
-      const hsv = rgbToHsv(procData[i], procData[i + 1], procData[i + 2]);
-      let hDist = Math.abs(hsv[0] - tH);
-      if (hDist > 180) hDist = 360 - hDist;
-      if (hDist <= this.hueTol &&
-          hsv[1] >= Math.max(0, tS - this.satTol) &&
-          hsv[2] >= Math.max(0, tV - this.valTol)) {
-        matchCount++;
-      }
-    }
-    this.refBlobSize = Math.max(20, matchCount);
+    const pd = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
+    // Build mask around the click only (tight ROI) to get the actual object size
+    const regRoi = {
+      x0: Math.max(0, Math.floor(normX * this.procW - 40)),
+      y0: Math.max(0, Math.floor(normY * this.procH - 40)),
+      x1: Math.min(this.procW, Math.ceil(normX * this.procW + 40)),
+      y1: Math.min(this.procH, Math.ceil(normY * this.procH + 40)),
+    };
+    this._buildMask(pd, regRoi);
+    const regBlobs = this._findBlobs(regRoi);
+    // Pick the blob closest to where the user clicked
+    const clickBlob = this._closestBlob(regBlobs, normX, normY, 4);
+    this.refBlobSize = clickBlob ? clickBlob.count : 30;
 
     this.registered = true;
-    this.lastPos = null;
-    this.lastBlobSize = 0;
+    this.lastBlobSize = this.refBlobSize;
     this.lostFrames = 0;
 
     return this.targetHSV;
@@ -389,26 +393,20 @@ class ObjectTracker {
     return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(v * 50)}%)`;
   }
 
-  /**
-   * Build a binary mask of color-matching pixels within an ROI.
-   * roi: { x0, y0, x1, y1 } in pixel coords, or null for full frame.
-   * Returns the number of matching pixels.
-   */
+  // ── Internal: build binary color mask ──
+
   _buildMask(data, roi) {
     const W = this.procW, H = this.procH;
     const mask = this.mask;
-    const { h: th, s: ts, v: tv } = this.targetHSV;
+    const { h: th } = this.targetHSV;
     const hTol = this.hueTol;
-    const sMin = Math.max(0, ts - this.satTol);
-    const vMin = Math.max(0, tv - this.valTol);
+    const sMin = this.satMin;
+    const vMin = this.valMin;
 
-    const rx0 = roi ? roi.x0 : 0;
-    const ry0 = roi ? roi.y0 : 0;
-    const rx1 = roi ? roi.x1 : W;
-    const ry1 = roi ? roi.y1 : H;
+    const rx0 = roi ? roi.x0 : 0, ry0 = roi ? roi.y0 : 0;
+    const rx1 = roi ? roi.x1 : W, ry1 = roi ? roi.y1 : H;
 
     let count = 0;
-    // Clear entire mask if doing ROI (previous values might linger)
     if (roi) mask.fill(0);
 
     for (let y = ry0; y < ry1; y++) {
@@ -416,13 +414,10 @@ class ObjectTracker {
         const idx = y * W + x;
         const i = idx * 4;
         const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
-
         let hDist = Math.abs(hsv[0] - th);
         if (hDist > 180) hDist = 360 - hDist;
-
         if (hDist <= hTol && hsv[1] >= sMin && hsv[2] >= vMin) {
-          mask[idx] = 1;
-          count++;
+          mask[idx] = 1; count++;
         } else {
           mask[idx] = 0;
         }
@@ -431,100 +426,159 @@ class ObjectTracker {
     return count;
   }
 
-  /**
-   * Connected component labeling (two-pass) on the binary mask.
-   * Returns array of { sumX, sumY, count } per label (index 0 unused).
-   */
+  // ── Internal: connected component labeling (two-pass union-find) ──
+
   _findBlobs(roi) {
     const W = this.procW, H = this.procH;
-    const mask = this.mask;
-    const labels = this.labels;
+    const mask = this.mask, labels = this.labels;
     labels.fill(0);
 
-    const rx0 = roi ? roi.x0 : 0;
-    const ry0 = roi ? roi.y0 : 0;
-    const rx1 = roi ? roi.x1 : W;
-    const ry1 = roi ? roi.y1 : H;
+    const rx0 = roi ? roi.x0 : 0, ry0 = roi ? roi.y0 : 0;
+    const rx1 = roi ? roi.x1 : W, ry1 = roi ? roi.y1 : H;
 
     let nextLabel = 1;
-    // Union-Find with path compression
-    const parent = [0]; // parent[0] unused
+    const parent = [0];
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[Math.max(a, b)] = Math.min(a, b); };
 
-    const find = (a) => {
-      while (parent[a] !== a) {
-        parent[a] = parent[parent[a]];
-        a = parent[a];
-      }
-      return a;
-    };
-    const union = (a, b) => {
-      a = find(a); b = find(b);
-      if (a !== b) parent[Math.max(a, b)] = Math.min(a, b);
-    };
-
-    // Pass 1: assign provisional labels
     for (let y = ry0; y < ry1; y++) {
       for (let x = rx0; x < rx1; x++) {
         const idx = y * W + x;
         if (!mask[idx]) continue;
-
         const above = (y > ry0) ? labels[(y - 1) * W + x] : 0;
         const left = (x > rx0) ? labels[y * W + (x - 1)] : 0;
-
-        if (above === 0 && left === 0) {
-          labels[idx] = nextLabel;
-          parent.push(nextLabel);
-          nextLabel++;
-        } else if (above !== 0 && left === 0) {
-          labels[idx] = above;
-        } else if (above === 0 && left !== 0) {
-          labels[idx] = left;
-        } else {
-          labels[idx] = Math.min(above, left);
-          if (above !== left) union(above, left);
-        }
+        if (!above && !left) { labels[idx] = nextLabel; parent.push(nextLabel); nextLabel++; }
+        else if (above && !left) { labels[idx] = above; }
+        else if (!above && left) { labels[idx] = left; }
+        else { labels[idx] = Math.min(above, left); if (above !== left) union(above, left); }
       }
     }
 
-    // Pass 2: resolve labels and accumulate blob stats
-    const blobs = new Map(); // rootLabel → { sumX, sumY, count }
+    const blobs = new Map();
     for (let y = ry0; y < ry1; y++) {
       for (let x = rx0; x < rx1; x++) {
         const idx = y * W + x;
         if (!labels[idx]) continue;
         const root = find(labels[idx]);
         labels[idx] = root;
-        let blob = blobs.get(root);
-        if (!blob) { blob = { sumX: 0, sumY: 0, count: 0 }; blobs.set(root, blob); }
-        blob.sumX += x;
-        blob.sumY += y;
-        blob.count++;
+        let b = blobs.get(root);
+        if (!b) { b = { sumX: 0, sumY: 0, count: 0 }; blobs.set(root, b); }
+        b.sumX += x; b.sumY += y; b.count++;
       }
     }
-
     return blobs;
   }
 
-  /**
-   * Find the best blob: largest one that's within a reasonable size range.
-   */
-  _bestBlob(blobs) {
-    let best = null;
-    const minSize = 6;
-    // Accept blobs from minSize up to 5x the reference size
-    const maxSize = this.refBlobSize > 0 ? this.refBlobSize * 5 : Infinity;
+  // ── Internal: find blob closest to a normalized position ──
 
+  _closestBlob(blobs, normX, normY, minSize) {
+    const px = normX * this.procW, py = normY * this.procH;
+    let best = null, bestDist = Infinity;
     for (const blob of blobs.values()) {
       if (blob.count < minSize) continue;
-      if (blob.count > maxSize) continue;
-      if (!best || blob.count > best.count) best = blob;
+      const cx = blob.sumX / blob.count, cy = blob.sumY / blob.count;
+      const d = (cx - px) ** 2 + (cy - py) ** 2;
+      if (d < bestDist) { bestDist = d; best = blob; }
+    }
+    return best;
+  }
+
+  // ── Internal: score a blob candidate (lower = better) ──
+
+  _scoreBlob(blob, data) {
+    const cx = (blob.sumX / blob.count) / this.procW;
+    const cy = (blob.sumY / blob.count) / this.procH;
+
+    // 1. Proximity to last known position (most important)
+    let distScore = 0;
+    if (this.lastPos) {
+      const dx = cx - this.lastPos.x, dy = cy - this.lastPos.y;
+      distScore = Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // 2. Size similarity to reference (log ratio, so 2x and 0.5x penalize equally)
+    const sizeRatio = blob.count / Math.max(1, this.refBlobSize);
+    const sizeScore = Math.abs(Math.log(Math.max(0.1, sizeRatio)));
+
+    // 3. Template matching — compare a patch around the blob centroid to the stored template
+    let templateScore = 0.5; // neutral default
+    if (this.template) {
+      templateScore = 1 - this._templateMatch(data, blob);
+    }
+
+    // Weighted combination (proximity is king, template breaks ties)
+    return distScore * 3.0 + sizeScore * 1.0 + templateScore * 2.0;
+  }
+
+  /**
+   * Compare a patch around the blob centroid to the stored template.
+   * Returns 0–1 similarity score (1 = perfect match).
+   * Uses normalized cross-correlation on the green channel (fast).
+   */
+  _templateMatch(data, blob) {
+    if (!this.template) return 0;
+    const tpl = this.template;
+    const tw = tpl.width, th = tpl.height;
+    const W = this.procW, H = this.procH;
+
+    // Blob centroid in proc-canvas coords
+    const bcx = Math.round(blob.sumX / blob.count);
+    const bcy = Math.round(blob.sumY / blob.count);
+
+    // Scale template coords to proc canvas space
+    // Template was captured at full video res, proc canvas is smaller
+    const scaleX = this.procW / (this.video.videoWidth || 640);
+    const scaleY = this.procH / (this.video.videoHeight || 480);
+    const ptw = Math.round(tw * scaleX);
+    const pth = Math.round(th * scaleY);
+
+    const px0 = Math.max(0, bcx - Math.floor(ptw / 2));
+    const py0 = Math.max(0, bcy - Math.floor(pth / 2));
+    const px1 = Math.min(W, px0 + ptw);
+    const py1 = Math.min(H, py0 + pth);
+
+    // Compare using green channel (good balance of luminance info)
+    let sumAB = 0, sumA2 = 0, sumB2 = 0;
+    let samples = 0;
+    for (let py = py0; py < py1; py++) {
+      for (let px = px0; px < px1; px++) {
+        // Map proc pixel to template pixel
+        const tx = Math.round(((px - px0) / Math.max(1, px1 - px0 - 1)) * (tw - 1));
+        const ty = Math.round(((py - py0) / Math.max(1, py1 - py0 - 1)) * (th - 1));
+        const ti = (ty * tw + tx) * 4 + 1; // green channel of template
+        const pi = (py * W + px) * 4 + 1;  // green channel of proc frame
+        if (ti < tpl.data.length && pi < data.length) {
+          const a = tpl.data[ti], b = data[pi];
+          sumAB += a * b;
+          sumA2 += a * a;
+          sumB2 += b * b;
+          samples++;
+        }
+      }
+    }
+    if (samples < 4 || sumA2 === 0 || sumB2 === 0) return 0;
+    // Normalized cross-correlation: -1 to 1, clamped to 0-1
+    return Math.max(0, sumAB / Math.sqrt(sumA2 * sumB2));
+  }
+
+  /**
+   * Pick the best blob from candidates using proximity + size + template.
+   */
+  _bestBlob(blobs, data) {
+    const minSize = 4;
+    const maxSize = this.refBlobSize > 0 ? this.refBlobSize * 8 : 5000;
+    let best = null, bestScore = Infinity;
+
+    for (const blob of blobs.values()) {
+      if (blob.count < minSize || blob.count > maxSize) continue;
+      const score = this._scoreBlob(blob, data);
+      if (score < bestScore) { bestScore = score; best = blob; }
     }
     return best;
   }
 
   /**
    * Detect the registered object. Returns normalized { x, y } or null.
-   * Uses ROI around last position for speed; falls back to full-frame search.
    */
   detect() {
     if (!this.registered || !this.video.videoWidth) return null;
@@ -534,35 +588,28 @@ class ObjectTracker {
     const data = ctx.getImageData(0, 0, this.procW, this.procH).data;
 
     let roi = null;
-    // If we have a recent position and haven't lost track for too long, use ROI
     if (this.lastPos && this.lostFrames < this.maxLostFrames) {
-      const pad = this.roiPad;
-      // Widen ROI if we've lost the object for a few frames
-      const expandedPad = pad + this.lostFrames * 0.02;
+      const pad = this.roiPad + this.lostFrames * 0.025;
       roi = {
-        x0: Math.max(0, Math.floor((this.lastPos.x - expandedPad) * this.procW)),
-        y0: Math.max(0, Math.floor((this.lastPos.y - expandedPad) * this.procH)),
-        x1: Math.min(this.procW, Math.ceil((this.lastPos.x + expandedPad) * this.procW)),
-        y1: Math.min(this.procH, Math.ceil((this.lastPos.y + expandedPad) * this.procH)),
+        x0: Math.max(0, Math.floor((this.lastPos.x - pad) * this.procW)),
+        y0: Math.max(0, Math.floor((this.lastPos.y - pad) * this.procH)),
+        x1: Math.min(this.procW, Math.ceil((this.lastPos.x + pad) * this.procW)),
+        y1: Math.min(this.procH, Math.ceil((this.lastPos.y + pad) * this.procH)),
       };
     }
 
-    // Build color mask and find connected blobs
     this._buildMask(data, roi);
     let blobs = this._findBlobs(roi);
-    let best = this._bestBlob(blobs);
+    let best = this._bestBlob(blobs, data);
 
-    // If ROI search failed, try full-frame search
+    // Fallback: full-frame search
     if (!best && roi) {
       this._buildMask(data, null);
       blobs = this._findBlobs(null);
-      best = this._bestBlob(blobs);
+      best = this._bestBlob(blobs, data);
     }
 
-    if (!best) {
-      this.lostFrames++;
-      return null;
-    }
+    if (!best) { this.lostFrames++; return null; }
 
     this.lostFrames = 0;
     this.lastBlobSize = best.count;
@@ -570,7 +617,6 @@ class ObjectTracker {
     const rawX = (best.sumX / best.count) / this.procW;
     const rawY = (best.sumY / best.count) / this.procH;
 
-    // Smooth to reduce jitter
     if (this.lastPos) {
       const s = this.smoothing;
       this.lastPos = {
