@@ -1889,6 +1889,7 @@ class App {
     this.guitarColor = localStorage.getItem('air-guitar-color') || 'original';
     this.coloredGuitar = null;
     this.activePatternName = 'pop';
+    this.hasExplicitPattern = true;
 
     this.metronomeOn = true;
     this.lastMetronomeBeat = -1;
@@ -2222,6 +2223,7 @@ class App {
     }
 
     const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
+    this.hasExplicitPattern = !!(overrides[song.id] || song.pattern);
     const patName = overrides[song.id] || song.pattern || (song.fingerpick ? 'fingerpick' : inferPattern(song.bpm || 120));
     this.setActivePattern(patName);
 
@@ -2247,6 +2249,7 @@ class App {
     const pool = GENERIC_PATTERNS.includes(this.activePatternName) ? GENERIC_PATTERNS : [this.activePatternName, ...GENERIC_PATTERNS];
     const idx = pool.indexOf(this.activePatternName);
     const next = pool[(idx + 1) % pool.length];
+    this.hasExplicitPattern = true;
     this.setActivePattern(next);
     if (this.currentSong) {
       const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
@@ -2516,6 +2519,8 @@ class App {
   renderWelcomePattern() {
     const pat = STRUM_PATTERNS[this.activePatternName];
     if (!pat) return;
+    const wrap = document.getElementById('welcome-pattern');
+    if (wrap) wrap.style.display = this.hasExplicitPattern ? '' : 'none';
     const nameEl = document.getElementById('welcome-pattern-name');
     const slotsEl = document.getElementById('welcome-pattern-slots');
     if (nameEl) nameEl.textContent = pat.label;
@@ -3498,12 +3503,14 @@ class App {
     }
 
     const beat = this.playing ? this.timer.beatInChord : -1;
-    drawStrumPattern(c, this.activePatternName, beat, L.patX, L.patY, L.patW);
+    if (this.hasExplicitPattern) {
+      drawStrumPattern(c, this.activePatternName, beat, L.patX, L.patY, L.patW);
 
-    if (this.playing && !this.countingIn) {
-      const totalBeats = this.timer.currentBeatsTotal();
-      drawBeatTimeline(c, this.activePatternName, beat, totalBeats, L.patX, L.tlY, L.patW);
-      drawStrumGuide(c, L, this.activePatternName, beat, totalBeats);
+      if (this.playing && !this.countingIn) {
+        const totalBeats = this.timer.currentBeatsTotal();
+        drawBeatTimeline(c, this.activePatternName, beat, totalBeats, L.patX, L.tlY, L.patW);
+        drawStrumGuide(c, L, this.activePatternName, beat, totalBeats);
+      }
     }
 
     let cursor = null;
