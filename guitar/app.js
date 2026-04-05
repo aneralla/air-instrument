@@ -350,7 +350,6 @@ function computeLayout(W, H, imgNatW, imgNatH, strumHalfWidth = 0.07) {
   const patX = diagX;
   const patY = diagY + diagH + 8;
   const patW = Math.max(diagW, 160);
-  const tlY = patY + 44;
 
   const bodyMidX = (bodyLeft + bodyRight) / 2;
 
@@ -358,7 +357,7 @@ function computeLayout(W, H, imgNatW, imgNatH, strumHalfWidth = 0.07) {
     imgX, imgY, imgW, imgH, scale,
     stringYs, bodyLeft, bodyRight, bodyMidX,
     fretXs,
-    patX, patY, patW, tlY,
+    patX, patY, patW,
     diagX, diagY, diagW, diagH,
   };
 }
@@ -576,71 +575,6 @@ function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(pat.label, x, y + fontSize + arrowSize + fontSize * 0.5 + 10);
-
-  ctx.restore();
-}
-
-function drawBeatTimeline(ctx, patternName, beatInChord, totalBeats, x, y, w) {
-  if (beatInChord < 0 || totalBeats <= 0) return;
-  const pat = STRUM_PATTERNS[patternName];
-  if (!pat) return;
-
-  const h = 14;
-  const frac = beatInChord / totalBeats;
-
-  ctx.save();
-
-  ctx.fillStyle = 'rgba(255,255,255,0.04)';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.strokeRect(x, y, w, h);
-
-  for (let b = 0; b <= totalBeats; b++) {
-    const bx = x + (b / totalBeats) * w;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(bx, y, 1, h);
-  }
-
-  for (const s of pat.strums) {
-    if (s.beat >= totalBeats) continue;
-    const sx = x + (s.beat / totalBeats) * w;
-    const isHit = beatInChord >= s.beat && beatInChord < s.beat + 0.3;
-    const markerH = h * 0.6;
-    const markerW = 5;
-    const my = y + (h - markerH) / 2;
-
-    if (isHit) {
-      ctx.fillStyle = s.dir === 'down' ? 'rgba(0,212,255,0.9)' : 'rgba(0,255,136,0.9)';
-      ctx.shadowColor = s.dir === 'down' ? '#00d4ff' : '#00ff88';
-      ctx.shadowBlur = 8;
-    } else {
-      ctx.fillStyle = s.dir === 'down' ? 'rgba(0,212,255,0.4)' : 'rgba(0,255,136,0.4)';
-      ctx.shadowBlur = 0;
-    }
-
-    if (s.dir === 'down') {
-      ctx.beginPath();
-      ctx.moveTo(sx, my);
-      ctx.lineTo(sx - markerW / 2, my);
-      ctx.lineTo(sx, my + markerH);
-      ctx.lineTo(sx + markerW / 2, my);
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(sx, my + markerH);
-      ctx.lineTo(sx - markerW / 2, my + markerH);
-      ctx.lineTo(sx, my);
-      ctx.lineTo(sx + markerW / 2, my + markerH);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
-
-  const px = x + frac * w;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(px - 1, y - 2, 2, h + 4);
 
   ctx.restore();
 }
@@ -1692,8 +1626,9 @@ class App {
     }
 
     const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
-    this.hasExplicitPattern = !!(overrides[song.id] || song.pattern);
-    const patName = overrides[song.id] || song.pattern || (song.fingerpick ? 'fingerpick' : inferPattern(song.bpm || 120));
+    // Songs with custom patterns always use their own; overrides only apply to songs without
+    this.hasExplicitPattern = !!song.pattern;
+    const patName = song.pattern || overrides[song.id] || (song.fingerpick ? 'fingerpick' : inferPattern(song.bpm || 120));
     this.setActivePattern(patName);
 
     const ts = song.timeSignature || [4, 4];
@@ -1720,7 +1655,8 @@ class App {
     const next = pool[(idx + 1) % pool.length];
     this.hasExplicitPattern = true;
     this.setActivePattern(next);
-    if (this.currentSong) {
+    // Only persist overrides for songs without their own pattern
+    if (this.currentSong && !this.currentSong.pattern) {
       const overrides = JSON.parse(localStorage.getItem('air-guitar-pattern-overrides') || '{}');
       overrides[this.currentSong.id] = next;
       localStorage.setItem('air-guitar-pattern-overrides', JSON.stringify(overrides));
@@ -2874,7 +2810,6 @@ class App {
 
       if (this.playing && !this.countingIn) {
         const totalBeats = this.timer.currentBeatsTotal();
-        drawBeatTimeline(c, this.activePatternName, beat, totalBeats, L.patX, L.tlY, L.patW);
         drawStrumGuide(c, L, this.activePatternName, beat, totalBeats);
       }
     }
