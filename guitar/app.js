@@ -292,6 +292,13 @@ class ObjectTracker {
     this.template = null;    // ImageData captured at registration
     this.templateW = 40;
     this.templateH = 40;
+    // Motion detection — frame differencing
+    this.prevGray = null;    // previous frame grayscale (Uint8Array, procW*procH)
+    this.motionMask = new Uint8Array(this.procW * this.procH);
+    this.motionThreshold = 20; // pixel brightness change to count as motion
+    this.colorWeight = 0.6;    // how much to weight color vs motion (0-1)
+    // Distinctiveness: is the registered color easy to track?
+    this.isDistinctive = true;
   }
 
   async init() { /* no external deps */ }
@@ -380,9 +387,12 @@ class ObjectTracker {
     const clickBlob = this._closestBlob(regBlobs, normX, normY, 4);
     this.refBlobSize = clickBlob ? clickBlob.count : 30;
 
+    this.isDistinctive = this.targetHSV.s > 0.35 && this.targetHSV.v > 0.30;
+
     this.registered = true;
     this.lastBlobSize = this.refBlobSize;
     this.lostFrames = 0;
+    this.prevGray = null;
 
     return this.targetHSV;
   }
@@ -485,11 +495,25 @@ class ObjectTracker {
     const clickBlob = this._closestBlob(regBlobs, cx, cy, 4);
     this.refBlobSize = clickBlob ? clickBlob.count : 30;
 
+    // Check if the registered color is distinctive (high saturation + brightness)
+    this.isDistinctive = this.targetHSV.s > 0.35 && this.targetHSV.v > 0.30;
+
     this.registered = true;
     this.lastBlobSize = this.refBlobSize;
     this.lostFrames = 0;
+    this.prevGray = null; // reset motion history
 
     return this.targetHSV;
+  }
+
+  /** Returns a warning string if the object is hard to track, or null if OK. */
+  getTrackingWarning() {
+    if (!this.targetHSV) return null;
+    const { s, v } = this.targetHSV;
+    if (s < 0.20 && v < 0.25) return 'Very dark object — tracking will rely on motion. Keep it moving!';
+    if (s < 0.25) return 'Low-color object — a brighter object would track better. Keep it moving!';
+    if (v < 0.20) return 'Very dark — try a brighter colored object for best results';
+    return null;
   }
 
   getRegisteredColorCSS() {
@@ -498,11 +522,38 @@ class ObjectTracker {
     return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(v * 50)}%)`;
   }
 
-  // ── Internal: build binary color mask ──
+  // ── Internal: compute motion mask (frame differencing) ──
+
+  _updateMotion(data) {
+    const W = this.procW, H = this.procH;
+    const total = W * H;
+    const curGray = new Uint8Array(total);
+    const motionMask = this.motionMask;
+    const thresh = this.motionThreshold;
+
+    // Convert current frame to grayscale
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      curGray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+    }
+
+    if (this.prevGray) {
+      for (let i = 0; i < total; i++) {
+        motionMask[i] = Math.abs(curGray[i] - this.prevGray[i]) > thresh ? 1 : 0;
+      }
+    } else {
+      motionMask.fill(1); // no previous frame — allow everything
+    }
+
+    this.prevGray = curGray;
+  }
+
+  // ── Internal: build binary mask combining color + motion ──
 
   _buildMask(data, roi) {
     const W = this.procW, H = this.procH;
     const mask = this.mask;
+    const motion = this.motionMask;
     const { h: th } = this.targetHSV;
     const hTol = this.hueTol;
     const sMin = this.satMin;
@@ -510,6 +561,10 @@ class ObjectTracker {
 
     const rx0 = roi ? roi.x0 : 0, ry0 = roi ? roi.y0 : 0;
     const rx1 = roi ? roi.x1 : W, ry1 = roi ? roi.y1 : H;
+
+    // For non-distinctive colors (dark/desaturated), require motion.
+    // For distinctive colors, color alone is sufficient.
+    const requireMotion = !this.isDistinctive;
 
     let count = 0;
     if (roi) mask.fill(0);
@@ -521,8 +576,27 @@ class ObjectTracker {
         const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
         let hDist = Math.abs(hsv[0] - th);
         if (hDist > 180) hDist = 360 - hDist;
-        if (hDist <= hTol && hsv[1] >= sMin && hsv[2] >= vMin) {
-          mask[idx] = 1; count++;
+
+        const colorMatch = hDist <= hTol && hsv[1] >= sMin && hsv[2] >= vMin;
+
+        if (colorMatch) {
+          if (requireMotion) {
+            // For hard-to-track colors: also check nearby motion
+            // Use a 3×3 neighborhood to be lenient about exact pixel motion
+            let hasMotion = false;
+            for (let dy = -1; dy <= 1 && !hasMotion; dy++) {
+              for (let dx = -1; dx <= 1 && !hasMotion; dx++) {
+                const ny = y + dy, nx = x + dx;
+                if (ny >= 0 && ny < H && nx >= 0 && nx < W && motion[ny * W + nx]) {
+                  hasMotion = true;
+                }
+              }
+            }
+            if (hasMotion) { mask[idx] = 1; count++; }
+            else { mask[idx] = 0; }
+          } else {
+            mask[idx] = 1; count++;
+          }
         } else {
           mask[idx] = 0;
         }
@@ -691,6 +765,9 @@ class ObjectTracker {
     const ctx = this.procCtx;
     ctx.drawImage(this.video, 0, 0, this.procW, this.procH);
     const data = ctx.getImageData(0, 0, this.procW, this.procH).data;
+
+    // Update motion mask (frame differencing)
+    this._updateMotion(data);
 
     let roi = null;
     if (this.lastPos && this.lostFrames < this.maxLostFrames) {
@@ -3019,8 +3096,13 @@ class App {
       }
 
       const color = this.tracker.getRegisteredColorCSS();
-      document.getElementById('calibrate-hint').innerHTML =
-        `Tracking <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span> — now click the <strong>TOP</strong> of your strum area`;
+      const warning = this.tracker.getTrackingWarning();
+      const swatch = `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span>`;
+      let hintHTML = `Tracking ${swatch} — now click the <strong>TOP</strong> of your strum area`;
+      if (warning) {
+        hintHTML += `<br><span style="color:#FFD740;font-size:12px;font-weight:400">${warning}</span>`;
+      }
+      document.getElementById('calibrate-hint').innerHTML = hintHTML;
       this.calibrateStep = 1;
       document.getElementById('calibrate-reset').style.display = '';
       this._calTopPxY = null;
