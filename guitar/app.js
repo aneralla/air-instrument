@@ -1902,6 +1902,7 @@ class App {
     this.hasPlayedOnce = false;
     this.scoreTooltipShown = false;
     this.cameraAvailable = false;
+    this.keyboardMode = false;
 
     this.countingIn = false;
     this.countInStart = 0;
@@ -2078,12 +2079,12 @@ class App {
 
     // Skip calibration buttons (welcome overlay + calibrate overlay)
     document.getElementById('welcome-skip-cal')?.addEventListener('click', () => {
+      this.keyboardMode = true;
       this.useDefaultCalibration();
-      document.getElementById('camera-pip').style.display = 'none';
     });
     document.getElementById('calibrate-skip').addEventListener('click', () => {
+      this.keyboardMode = true;
       this.useDefaultCalibration();
-      document.getElementById('camera-pip').style.display = 'none';
       this.finishCalibration();
     });
     document.getElementById('calibrate-reset').addEventListener('click', () => {
@@ -2823,6 +2824,7 @@ class App {
 
   showCameraPip() {
     const pip = document.getElementById('camera-pip');
+    if (this.keyboardMode) return;
     if (this.cameraAvailable && this.calibrated && this.tracker.registered) {
       pip.style.display = '';
       pip.classList.remove('pip-hidden');
