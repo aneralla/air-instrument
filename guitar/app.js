@@ -531,42 +531,44 @@ function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
     }
 
     const ay = y + fontSize + 4;
-    const keyY = ay + arrowSize * 0.7 + 3;
+    const arrowH = arrowSize * 0.85;
+    const arrowW = arrowSize * 0.45;
+    const keyY = ay + arrowH + 4;
     if (slot === 'D') {
-      ctx.fillStyle = isActive ? '#00d4ff' : 'rgba(255,255,255,0.55)';
+      ctx.fillStyle = isActive ? '#00d4ff' : 'rgba(0,212,255,0.7)';
       ctx.beginPath();
       ctx.moveTo(cx, ay);
-      ctx.lineTo(cx - arrowSize * 0.35, ay);
-      ctx.lineTo(cx, ay + arrowSize * 0.7);
-      ctx.lineTo(cx + arrowSize * 0.35, ay);
+      ctx.lineTo(cx - arrowW, ay);
+      ctx.lineTo(cx, ay + arrowH);
+      ctx.lineTo(cx + arrowW, ay);
       ctx.closePath();
       ctx.fill();
       // Key label
-      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.18)';
-      ctx.font = `600 ${Math.round(fontSize * 0.5)}px Inter, sans-serif`;
+      ctx.fillStyle = isActive ? '#00d4ff' : 'rgba(0,212,255,0.55)';
+      ctx.font = `700 ${Math.round(fontSize * 0.6)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText('J', cx, keyY);
       ctx.font = `600 ${Math.round(fontSize * 0.65)}px Inter, sans-serif`;
     } else if (slot === 'U') {
-      ctx.fillStyle = isActive ? '#00ff88' : 'rgba(255,255,255,0.45)';
+      ctx.fillStyle = isActive ? '#00ff88' : 'rgba(0,255,136,0.7)';
       ctx.beginPath();
-      ctx.moveTo(cx, ay + arrowSize * 0.7);
-      ctx.lineTo(cx - arrowSize * 0.35, ay + arrowSize * 0.7);
+      ctx.moveTo(cx, ay + arrowH);
+      ctx.lineTo(cx - arrowW, ay + arrowH);
       ctx.lineTo(cx, ay);
-      ctx.lineTo(cx + arrowSize * 0.35, ay + arrowSize * 0.7);
+      ctx.lineTo(cx + arrowW, ay + arrowH);
       ctx.closePath();
       ctx.fill();
       // Key label
-      ctx.fillStyle = isActive ? 'rgba(0,255,136,0.5)' : 'rgba(255,255,255,0.18)';
-      ctx.font = `600 ${Math.round(fontSize * 0.5)}px Inter, sans-serif`;
+      ctx.fillStyle = isActive ? '#00ff88' : 'rgba(0,255,136,0.55)';
+      ctx.font = `700 ${Math.round(fontSize * 0.6)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText('K', cx, keyY);
       ctx.font = `600 ${Math.round(fontSize * 0.65)}px Inter, sans-serif`;
     } else {
-      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.1)';
-      ctx.fillRect(cx - 1, ay + arrowSize * 0.25, 2, arrowSize * 0.2);
+      ctx.fillStyle = isActive ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.15)';
+      ctx.fillRect(cx - 1, ay + arrowH * 0.3, 2, arrowH * 0.25);
     }
   }
 
@@ -574,7 +576,7 @@ function drawStrumPattern(ctx, patternName, beatInChord, x, y, w) {
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(pat.label, x, y + fontSize + arrowSize + fontSize * 0.5 + 10);
+  ctx.fillText(pat.label, x, y + fontSize + arrowSize * 0.85 + fontSize * 0.6 + 14);
 
   ctx.restore();
 }
