@@ -2079,9 +2079,11 @@ class App {
     // Skip calibration buttons (welcome overlay + calibrate overlay)
     document.getElementById('welcome-skip-cal')?.addEventListener('click', () => {
       this.useDefaultCalibration();
+      document.getElementById('camera-pip').style.display = 'none';
     });
     document.getElementById('calibrate-skip').addEventListener('click', () => {
       this.useDefaultCalibration();
+      document.getElementById('camera-pip').style.display = 'none';
       this.finishCalibration();
     });
     document.getElementById('calibrate-reset').addEventListener('click', () => {
