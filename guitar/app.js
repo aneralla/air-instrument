@@ -105,7 +105,8 @@ class GuitarAudio {
   constructor() {
     this.ctx = null;
     this.out = null;
-    this.cache = {};
+    this.cache = new Map();
+    this.cacheLimit = 50;
     this.toneName = 'clean';
   }
 
@@ -165,7 +166,13 @@ class GuitarAudio {
   }
 
   getBuffers(chordName, pos) {
-    if (this.cache[chordName]) return this.cache[chordName];
+    if (this.cache.has(chordName)) {
+      // Move to end for LRU freshness
+      const bufs = this.cache.get(chordName);
+      this.cache.delete(chordName);
+      this.cache.set(chordName, bufs);
+      return bufs;
+    }
     if (!this.ctx) this.init();
     const bufs = [];
     for (let s = 0; s < 6; s++) {
@@ -177,7 +184,12 @@ class GuitarAudio {
         bufs.push(this.pluck(freq));
       }
     }
-    this.cache[chordName] = bufs;
+    // Evict oldest entry if at capacity
+    if (this.cache.size >= this.cacheLimit) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
+    this.cache.set(chordName, bufs);
     return bufs;
   }
 
@@ -228,6 +240,13 @@ class HandTracker {
     this.video = video;
     this.landmarker = null;
     this.registered = true; // always "registered" — no object registration needed
+    this.stream = null;
+    // Palm landmark indices: wrist + base of each finger
+    this.PALM_LANDMARKS = [0, 5, 9, 13, 17];
+    // Moving average buffer for temporal smoothing
+    this.posBuffer = [];
+    this.bufferSize = 5;
+    this.minConfidence = 0.7;
   }
 
   async init() {
@@ -249,19 +268,48 @@ class HandTracker {
   }
 
   async startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    this.stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 640, height: 480, facingMode: 'user' },
     });
-    this.video.srcObject = stream;
+    this.video.srcObject = this.stream;
     await new Promise((r) => { this.video.onloadeddata = r; });
+  }
+
+  stopCamera() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => t.stop());
+      this.stream = null;
+    }
+    this.video.srcObject = null;
+    this.posBuffer = [];
   }
 
   detect() {
     if (!this.landmarker || !this.video.videoWidth) return null;
     const res = this.landmarker.detectForVideo(this.video, performance.now());
     if (!res.landmarks || !res.landmarks.length) return null;
-    const tip = res.landmarks[0][8];
-    return { x: tip.x, y: tip.y };
+
+    // Reject low-confidence detections
+    if (res.handedness && res.handedness[0] && res.handedness[0][0]) {
+      if (res.handedness[0][0].score < this.minConfidence) return null;
+    }
+
+    // Average palm landmarks (wrist + finger bases) for stable center
+    const lm = res.landmarks[0];
+    let sx = 0, sy = 0;
+    for (const idx of this.PALM_LANDMARKS) {
+      sx += lm[idx].x;
+      sy += lm[idx].y;
+    }
+    const raw = { x: sx / this.PALM_LANDMARKS.length, y: sy / this.PALM_LANDMARKS.length };
+
+    // Moving average temporal filter
+    this.posBuffer.push(raw);
+    if (this.posBuffer.length > this.bufferSize) this.posBuffer.shift();
+
+    let avgX = 0, avgY = 0;
+    for (const p of this.posBuffer) { avgX += p.x; avgY += p.y; }
+    return { x: avgX / this.posBuffer.length, y: avgY / this.posBuffer.length };
   }
 
   // Compatibility stubs so the calibration code doesn't break
@@ -269,576 +317,6 @@ class HandTracker {
   getTrackingWarning() { return null; }
 }
 
-// ── RGB → HSV ──────────────────────────────────────────────
-
-function rgbToHsv(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const d = max - min;
-  let h = 0;
-  const s = max === 0 ? 0 : d / max;
-  const v = max;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (max === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-  }
-  return [h * 360, s, v]; // h: 0-360, s: 0-1, v: 0-1
-}
-
-// ── Object tracker (color + shape + template) ──────────────
-
-class ObjectTracker {
-  constructor(video) {
-    this.video = video;
-    this.registered = false;
-    this.targetHSV = null;   // { h, s, v }
-    // Tolerances — set dynamically from actual color variance at registration
-    this.hueTol = 15;
-    this.satMin = 0;
-    this.valMin = 0;
-    // Processing canvas — 240×180 balances accuracy vs speed
-    this.procW = 240;
-    this.procH = 180;
-    this.procCanvas = document.createElement('canvas');
-    this.procCanvas.width = this.procW;
-    this.procCanvas.height = this.procH;
-    this.procCtx = this.procCanvas.getContext('2d', { willReadFrequently: true });
-    // Binary mask for blob detection
-    this.mask = new Uint8Array(this.procW * this.procH);
-    this.labels = new Int32Array(this.procW * this.procH);
-    // Tracking state
-    this.lastPos = null;
-    this.lastBlobSize = 0;
-    this.refBlobSize = 0;    // blob size at registration (on proc canvas)
-    this.smoothing = 0.3;
-    this.roiPad = 0.18;
-    this.lostFrames = 0;
-    this.maxLostFrames = 10;
-    // Template patch for visual verification of blob candidates
-    this.template = null;    // ImageData captured at registration
-    this.templateW = 40;
-    this.templateH = 40;
-    // Motion detection — frame differencing
-    this.prevGray = null;    // previous frame grayscale (Uint8Array, procW*procH)
-    this.motionMask = new Uint8Array(this.procW * this.procH);
-    this.motionThreshold = 20; // pixel brightness change to count as motion
-    this.colorWeight = 0.6;    // how much to weight color vs motion (0-1)
-    // Distinctiveness: is the registered color easy to track?
-    this.isDistinctive = true;
-  }
-
-  async init() { /* no external deps */ }
-
-  async startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
-    });
-    this.video.srcObject = stream;
-    await new Promise((r) => { this.video.onloadeddata = r; });
-  }
-
-  /**
-   * Register the object from a click on the calibration video.
-   * Samples color, derives tight tolerances, captures a template, and
-   * seeds lastPos so the first detect() frame uses ROI near the click.
-   */
-  registerFromVideo(videoEl, normX, normY) {
-    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
-    const tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = vw; tmpCanvas.height = vh;
-    const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(videoEl, 0, 0);
-
-    const px = Math.round(normX * vw);
-    const py = Math.round(normY * vh);
-
-    // ── Sample HSV from a small region around the click ──
-    const R = 14;
-    const sx0 = Math.max(0, px - R), sy0 = Math.max(0, py - R);
-    const sw = Math.min(vw, px + R) - sx0;
-    const sh = Math.min(vh, py + R) - sy0;
-    if (sw <= 0 || sh <= 0) return null;
-
-    const sData = ctx.getImageData(sx0, sy0, sw, sh).data;
-    const hues = [], sats = [], vals = [];
-    for (let i = 0; i < sData.length; i += 4) {
-      const hsv = rgbToHsv(sData[i], sData[i + 1], sData[i + 2]);
-      if (hsv[1] > 0.10 && hsv[2] > 0.10) {
-        hues.push(hsv[0]); sats.push(hsv[1]); vals.push(hsv[2]);
-      }
-    }
-    if (hues.length < 4) return null;
-
-    hues.sort((a, b) => a - b);
-    sats.sort((a, b) => a - b);
-    vals.sort((a, b) => a - b);
-    const mid = Math.floor(hues.length / 2);
-    const q1 = Math.floor(hues.length * 0.25);
-    const q3 = Math.floor(hues.length * 0.75);
-
-    this.targetHSV = { h: hues[mid], s: sats[mid], v: vals[mid] };
-
-    // ── Derive tolerances from IQR (tighter = fewer false positives) ──
-    const hIQR = hues[q3] - hues[q1];
-    const sIQR = sats[q3] - sats[q1];
-    const vIQR = vals[q3] - vals[q1];
-    this.hueTol = Math.max(10, Math.min(25, hIQR * 2 + 8));
-    this.satMin = Math.max(0, this.targetHSV.s - Math.max(0.12, sIQR * 2));
-    this.valMin = Math.max(0, this.targetHSV.v - Math.max(0.12, vIQR * 2));
-
-    // ── Capture template patch ──
-    const tw = this.templateW, th = this.templateH;
-    const tx0 = Math.max(0, Math.round(px - tw / 2));
-    const ty0 = Math.max(0, Math.round(py - th / 2));
-    const tcw = Math.min(vw - tx0, tw);
-    const tch = Math.min(vh - ty0, th);
-    this.template = ctx.getImageData(tx0, ty0, tcw, tch);
-
-    // ── Seed initial position from click so first ROI centers correctly ──
-    this.lastPos = { x: normX, y: normY };
-
-    // ── Measure reference blob size at registration ──
-    this.procCtx.drawImage(videoEl, 0, 0, this.procW, this.procH);
-    const pd = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
-    // Build mask around the click only (tight ROI) to get the actual object size
-    const regRoi = {
-      x0: Math.max(0, Math.floor(normX * this.procW - 40)),
-      y0: Math.max(0, Math.floor(normY * this.procH - 40)),
-      x1: Math.min(this.procW, Math.ceil(normX * this.procW + 40)),
-      y1: Math.min(this.procH, Math.ceil(normY * this.procH + 40)),
-    };
-    this._buildMask(pd, regRoi);
-    const regBlobs = this._findBlobs(regRoi);
-    // Pick the blob closest to where the user clicked
-    const clickBlob = this._closestBlob(regBlobs, normX, normY, 4);
-    this.refBlobSize = clickBlob ? clickBlob.count : 30;
-
-    this.isDistinctive = this.targetHSV.s > 0.35 && this.targetHSV.v > 0.30;
-
-    this.registered = true;
-    this.lastBlobSize = this.refBlobSize;
-    this.lostFrames = 0;
-    this.prevGray = null;
-
-    return this.targetHSV;
-  }
-
-  /**
-   * Register from a user-drawn rectangle (normalized 0-1 coords).
-   * Much more robust than a single click — samples the entire region.
-   */
-  registerFromRegion(videoEl, nx0, ny0, nx1, ny1) {
-    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
-    const tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = vw; tmpCanvas.height = vh;
-    const ctx = tmpCanvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(videoEl, 0, 0);
-
-    // Pixel bounds of the drawn box
-    const bx0 = Math.round(nx0 * vw), by0 = Math.round(ny0 * vh);
-    const bx1 = Math.round(nx1 * vw), by1 = Math.round(ny1 * vh);
-    const bw = bx1 - bx0, bh = by1 - by0;
-    if (bw < 4 || bh < 4) return null;
-
-    // ── Sample HSV from ALL pixels inside the box ──
-    const boxData = ctx.getImageData(bx0, by0, bw, bh).data;
-    const hues = [], sats = [], vals = [];
-    for (let i = 0; i < boxData.length; i += 4) {
-      const hsv = rgbToHsv(boxData[i], boxData[i + 1], boxData[i + 2]);
-      if (hsv[1] > 0.08 && hsv[2] > 0.08) {
-        hues.push(hsv[0]); sats.push(hsv[1]); vals.push(hsv[2]);
-      }
-    }
-    if (hues.length < 8) return null;
-
-    hues.sort((a, b) => a - b);
-    sats.sort((a, b) => a - b);
-    vals.sort((a, b) => a - b);
-    const mid = Math.floor(hues.length / 2);
-    const q1 = Math.floor(hues.length * 0.25);
-    const q3 = Math.floor(hues.length * 0.75);
-
-    this.targetHSV = { h: hues[mid], s: sats[mid], v: vals[mid] };
-
-    // ── Tight tolerances from IQR ──
-    const hIQR = hues[q3] - hues[q1];
-    const sIQR = sats[q3] - sats[q1];
-    const vIQR = vals[q3] - vals[q1];
-    this.hueTol = Math.max(8, Math.min(25, hIQR * 1.5 + 6));
-    this.satMin = Math.max(0, this.targetHSV.s - Math.max(0.10, sIQR * 1.5));
-    this.valMin = Math.max(0, this.targetHSV.v - Math.max(0.10, vIQR * 1.5));
-
-    // ── Sample background just outside the box to learn what to exclude ──
-    // Expand the box by 8px on each side and sample the border ring
-    const margin = 8;
-    const ox0 = Math.max(0, bx0 - margin), oy0 = Math.max(0, by0 - margin);
-    const ox1 = Math.min(vw, bx1 + margin), oy1 = Math.min(vh, by1 + margin);
-    const outerData = ctx.getImageData(ox0, oy0, ox1 - ox0, oy1 - oy0).data;
-    const outerW = ox1 - ox0;
-    const bgHues = [];
-    for (let y = 0; y < oy1 - oy0; y++) {
-      for (let x = 0; x < outerW; x++) {
-        // Only sample pixels in the outer ring (not inside the box)
-        const absX = ox0 + x, absY = oy0 + y;
-        if (absX >= bx0 && absX < bx1 && absY >= by0 && absY < by1) continue;
-        const i = (y * outerW + x) * 4;
-        const hsv = rgbToHsv(outerData[i], outerData[i + 1], outerData[i + 2]);
-        if (hsv[1] > 0.08 && hsv[2] > 0.08) bgHues.push(hsv[0]);
-      }
-    }
-    // If background has similar hue, tighten the hue tolerance further
-    if (bgHues.length > 10) {
-      bgHues.sort((a, b) => a - b);
-      const bgMedianH = bgHues[Math.floor(bgHues.length / 2)];
-      let bgDist = Math.abs(bgMedianH - this.targetHSV.h);
-      if (bgDist > 180) bgDist = 360 - bgDist;
-      if (bgDist < this.hueTol * 1.5) {
-        // Background is close in hue — tighten tolerance to half the distance
-        this.hueTol = Math.max(6, Math.min(this.hueTol, bgDist * 0.4));
-      }
-    }
-
-    // ── Capture template from the box region ──
-    this.template = ctx.getImageData(bx0, by0, bw, bh);
-    this.templateW = bw;
-    this.templateH = bh;
-
-    // ── Seed position at the box center ──
-    this.lastPos = { x: (nx0 + nx1) / 2, y: (ny0 + ny1) / 2 };
-
-    // ── Measure reference blob size on the proc canvas ──
-    this.procCtx.drawImage(videoEl, 0, 0, this.procW, this.procH);
-    const pd = this.procCtx.getImageData(0, 0, this.procW, this.procH).data;
-    const cx = (nx0 + nx1) / 2, cy = (ny0 + ny1) / 2;
-    const regRoi = {
-      x0: Math.max(0, Math.floor(cx * this.procW - 50)),
-      y0: Math.max(0, Math.floor(cy * this.procH - 50)),
-      x1: Math.min(this.procW, Math.ceil(cx * this.procW + 50)),
-      y1: Math.min(this.procH, Math.ceil(cy * this.procH + 50)),
-    };
-    this._buildMask(pd, regRoi);
-    const regBlobs = this._findBlobs(regRoi);
-    const clickBlob = this._closestBlob(regBlobs, cx, cy, 4);
-    this.refBlobSize = clickBlob ? clickBlob.count : 30;
-
-    // Check if the registered color is distinctive (high saturation + brightness)
-    this.isDistinctive = this.targetHSV.s > 0.35 && this.targetHSV.v > 0.30;
-
-    this.registered = true;
-    this.lastBlobSize = this.refBlobSize;
-    this.lostFrames = 0;
-    this.prevGray = null; // reset motion history
-
-    return this.targetHSV;
-  }
-
-  /** Returns a warning string if the object is hard to track, or null if OK. */
-  getTrackingWarning() {
-    if (!this.targetHSV) return null;
-    const { s, v } = this.targetHSV;
-    if (s < 0.20 && v < 0.25) return 'Very dark object — tracking will rely on motion. Keep it moving!';
-    if (s < 0.25) return 'Low-color object — a brighter object would track better. Keep it moving!';
-    if (v < 0.20) return 'Very dark — try a brighter colored object for best results';
-    return null;
-  }
-
-  getRegisteredColorCSS() {
-    if (!this.targetHSV) return '#fff';
-    const { h, s, v } = this.targetHSV;
-    return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(v * 50)}%)`;
-  }
-
-  // ── Internal: compute motion mask (frame differencing) ──
-
-  _updateMotion(data) {
-    const W = this.procW, H = this.procH;
-    const total = W * H;
-    const curGray = new Uint8Array(total);
-    const motionMask = this.motionMask;
-    const thresh = this.motionThreshold;
-
-    // Convert current frame to grayscale
-    for (let i = 0; i < total; i++) {
-      const p = i * 4;
-      curGray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
-    }
-
-    if (this.prevGray) {
-      for (let i = 0; i < total; i++) {
-        motionMask[i] = Math.abs(curGray[i] - this.prevGray[i]) > thresh ? 1 : 0;
-      }
-    } else {
-      motionMask.fill(1); // no previous frame — allow everything
-    }
-
-    this.prevGray = curGray;
-  }
-
-  // ── Internal: build binary mask combining color + motion ──
-
-  _buildMask(data, roi) {
-    const W = this.procW, H = this.procH;
-    const mask = this.mask;
-    const motion = this.motionMask;
-    const { h: th } = this.targetHSV;
-    const hTol = this.hueTol;
-    const sMin = this.satMin;
-    const vMin = this.valMin;
-
-    const rx0 = roi ? roi.x0 : 0, ry0 = roi ? roi.y0 : 0;
-    const rx1 = roi ? roi.x1 : W, ry1 = roi ? roi.y1 : H;
-
-    // For non-distinctive colors (dark/desaturated), require motion.
-    // For distinctive colors, color alone is sufficient.
-    const requireMotion = !this.isDistinctive;
-
-    let count = 0;
-    if (roi) mask.fill(0);
-
-    for (let y = ry0; y < ry1; y++) {
-      for (let x = rx0; x < rx1; x++) {
-        const idx = y * W + x;
-        const i = idx * 4;
-        const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
-        let hDist = Math.abs(hsv[0] - th);
-        if (hDist > 180) hDist = 360 - hDist;
-
-        const colorMatch = hDist <= hTol && hsv[1] >= sMin && hsv[2] >= vMin;
-
-        if (colorMatch) {
-          if (requireMotion) {
-            // For hard-to-track colors: also check nearby motion
-            // Use a 3×3 neighborhood to be lenient about exact pixel motion
-            let hasMotion = false;
-            for (let dy = -1; dy <= 1 && !hasMotion; dy++) {
-              for (let dx = -1; dx <= 1 && !hasMotion; dx++) {
-                const ny = y + dy, nx = x + dx;
-                if (ny >= 0 && ny < H && nx >= 0 && nx < W && motion[ny * W + nx]) {
-                  hasMotion = true;
-                }
-              }
-            }
-            if (hasMotion) { mask[idx] = 1; count++; }
-            else { mask[idx] = 0; }
-          } else {
-            mask[idx] = 1; count++;
-          }
-        } else {
-          mask[idx] = 0;
-        }
-      }
-    }
-    return count;
-  }
-
-  // ── Internal: connected component labeling (two-pass union-find) ──
-
-  _findBlobs(roi) {
-    const W = this.procW, H = this.procH;
-    const mask = this.mask, labels = this.labels;
-    labels.fill(0);
-
-    const rx0 = roi ? roi.x0 : 0, ry0 = roi ? roi.y0 : 0;
-    const rx1 = roi ? roi.x1 : W, ry1 = roi ? roi.y1 : H;
-
-    let nextLabel = 1;
-    const parent = [0];
-    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-    const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[Math.max(a, b)] = Math.min(a, b); };
-
-    for (let y = ry0; y < ry1; y++) {
-      for (let x = rx0; x < rx1; x++) {
-        const idx = y * W + x;
-        if (!mask[idx]) continue;
-        const above = (y > ry0) ? labels[(y - 1) * W + x] : 0;
-        const left = (x > rx0) ? labels[y * W + (x - 1)] : 0;
-        if (!above && !left) { labels[idx] = nextLabel; parent.push(nextLabel); nextLabel++; }
-        else if (above && !left) { labels[idx] = above; }
-        else if (!above && left) { labels[idx] = left; }
-        else { labels[idx] = Math.min(above, left); if (above !== left) union(above, left); }
-      }
-    }
-
-    const blobs = new Map();
-    for (let y = ry0; y < ry1; y++) {
-      for (let x = rx0; x < rx1; x++) {
-        const idx = y * W + x;
-        if (!labels[idx]) continue;
-        const root = find(labels[idx]);
-        labels[idx] = root;
-        let b = blobs.get(root);
-        if (!b) { b = { sumX: 0, sumY: 0, count: 0 }; blobs.set(root, b); }
-        b.sumX += x; b.sumY += y; b.count++;
-      }
-    }
-    return blobs;
-  }
-
-  // ── Internal: find blob closest to a normalized position ──
-
-  _closestBlob(blobs, normX, normY, minSize) {
-    const px = normX * this.procW, py = normY * this.procH;
-    let best = null, bestDist = Infinity;
-    for (const blob of blobs.values()) {
-      if (blob.count < minSize) continue;
-      const cx = blob.sumX / blob.count, cy = blob.sumY / blob.count;
-      const d = (cx - px) ** 2 + (cy - py) ** 2;
-      if (d < bestDist) { bestDist = d; best = blob; }
-    }
-    return best;
-  }
-
-  // ── Internal: score a blob candidate (lower = better) ──
-
-  _scoreBlob(blob, data) {
-    const cx = (blob.sumX / blob.count) / this.procW;
-    const cy = (blob.sumY / blob.count) / this.procH;
-
-    // 1. Proximity to last known position (most important)
-    let distScore = 0;
-    if (this.lastPos) {
-      const dx = cx - this.lastPos.x, dy = cy - this.lastPos.y;
-      distScore = Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // 2. Size similarity to reference (log ratio, so 2x and 0.5x penalize equally)
-    const sizeRatio = blob.count / Math.max(1, this.refBlobSize);
-    const sizeScore = Math.abs(Math.log(Math.max(0.1, sizeRatio)));
-
-    // 3. Template matching — compare a patch around the blob centroid to the stored template
-    let templateScore = 0.5; // neutral default
-    if (this.template) {
-      templateScore = 1 - this._templateMatch(data, blob);
-    }
-
-    // Weighted combination (proximity is king, template breaks ties)
-    return distScore * 3.0 + sizeScore * 1.0 + templateScore * 2.0;
-  }
-
-  /**
-   * Compare a patch around the blob centroid to the stored template.
-   * Returns 0–1 similarity score (1 = perfect match).
-   * Uses normalized cross-correlation on the green channel (fast).
-   */
-  _templateMatch(data, blob) {
-    if (!this.template) return 0;
-    const tpl = this.template;
-    const tw = tpl.width, th = tpl.height;
-    const W = this.procW, H = this.procH;
-
-    // Blob centroid in proc-canvas coords
-    const bcx = Math.round(blob.sumX / blob.count);
-    const bcy = Math.round(blob.sumY / blob.count);
-
-    // Scale template coords to proc canvas space
-    // Template was captured at full video res, proc canvas is smaller
-    const scaleX = this.procW / (this.video.videoWidth || 640);
-    const scaleY = this.procH / (this.video.videoHeight || 480);
-    const ptw = Math.round(tw * scaleX);
-    const pth = Math.round(th * scaleY);
-
-    const px0 = Math.max(0, bcx - Math.floor(ptw / 2));
-    const py0 = Math.max(0, bcy - Math.floor(pth / 2));
-    const px1 = Math.min(W, px0 + ptw);
-    const py1 = Math.min(H, py0 + pth);
-
-    // Compare using green channel (good balance of luminance info)
-    let sumAB = 0, sumA2 = 0, sumB2 = 0;
-    let samples = 0;
-    for (let py = py0; py < py1; py++) {
-      for (let px = px0; px < px1; px++) {
-        // Map proc pixel to template pixel
-        const tx = Math.round(((px - px0) / Math.max(1, px1 - px0 - 1)) * (tw - 1));
-        const ty = Math.round(((py - py0) / Math.max(1, py1 - py0 - 1)) * (th - 1));
-        const ti = (ty * tw + tx) * 4 + 1; // green channel of template
-        const pi = (py * W + px) * 4 + 1;  // green channel of proc frame
-        if (ti < tpl.data.length && pi < data.length) {
-          const a = tpl.data[ti], b = data[pi];
-          sumAB += a * b;
-          sumA2 += a * a;
-          sumB2 += b * b;
-          samples++;
-        }
-      }
-    }
-    if (samples < 4 || sumA2 === 0 || sumB2 === 0) return 0;
-    // Normalized cross-correlation: -1 to 1, clamped to 0-1
-    return Math.max(0, sumAB / Math.sqrt(sumA2 * sumB2));
-  }
-
-  /**
-   * Pick the best blob from candidates using proximity + size + template.
-   */
-  _bestBlob(blobs, data) {
-    const minSize = 4;
-    const maxSize = this.refBlobSize > 0 ? this.refBlobSize * 8 : 5000;
-    let best = null, bestScore = Infinity;
-
-    for (const blob of blobs.values()) {
-      if (blob.count < minSize || blob.count > maxSize) continue;
-      const score = this._scoreBlob(blob, data);
-      if (score < bestScore) { bestScore = score; best = blob; }
-    }
-    return best;
-  }
-
-  /**
-   * Detect the registered object. Returns normalized { x, y } or null.
-   */
-  detect() {
-    if (!this.registered || !this.video.videoWidth) return null;
-
-    const ctx = this.procCtx;
-    ctx.drawImage(this.video, 0, 0, this.procW, this.procH);
-    const data = ctx.getImageData(0, 0, this.procW, this.procH).data;
-
-    // Update motion mask (frame differencing)
-    this._updateMotion(data);
-
-    let roi = null;
-    if (this.lastPos && this.lostFrames < this.maxLostFrames) {
-      const pad = this.roiPad + this.lostFrames * 0.025;
-      roi = {
-        x0: Math.max(0, Math.floor((this.lastPos.x - pad) * this.procW)),
-        y0: Math.max(0, Math.floor((this.lastPos.y - pad) * this.procH)),
-        x1: Math.min(this.procW, Math.ceil((this.lastPos.x + pad) * this.procW)),
-        y1: Math.min(this.procH, Math.ceil((this.lastPos.y + pad) * this.procH)),
-      };
-    }
-
-    this._buildMask(data, roi);
-    let blobs = this._findBlobs(roi);
-    let best = this._bestBlob(blobs, data);
-
-    // Fallback: full-frame search
-    if (!best && roi) {
-      this._buildMask(data, null);
-      blobs = this._findBlobs(null);
-      best = this._bestBlob(blobs, data);
-    }
-
-    if (!best) { this.lostFrames++; return null; }
-
-    this.lostFrames = 0;
-    this.lastBlobSize = best.count;
-
-    const rawX = (best.sumX / best.count) / this.procW;
-    const rawY = (best.sumY / best.count) / this.procH;
-
-    if (this.lastPos) {
-      const s = this.smoothing;
-      this.lastPos = {
-        x: this.lastPos.x * s + rawX * (1 - s),
-        y: this.lastPos.y * s + rawY * (1 - s),
-      };
-    } else {
-      this.lastPos = { x: rawX, y: rawY };
-    }
-
-    return { x: this.lastPos.x, y: this.lastPos.y };
-  }
-}
 
 // ── Layout ──────────────────────────────────────────────────
 
@@ -1406,6 +884,9 @@ class ProgressionTimer {
         });
       }
     }
+
+    // Cache total beats to avoid per-frame reduce
+    this._totalSegBeats = this.segments.reduce((s, seg) => s + seg.beats, 0);
   }
 
   stop() { this.running = false; }
@@ -1415,7 +896,7 @@ class ProgressionTimer {
     const elapsed = (performance.now() - this.startTime) / 1000;
     const beatDur = 60 / this.bpm;
     const totalBeat = elapsed / beatDur;
-    const totalSegBeats = this.segments.reduce((s, seg) => s + seg.beats, 0);
+    const totalSegBeats = this._totalSegBeats;
 
     let beatPos;
     if (this.looping || this.loopMode) {
@@ -1486,7 +967,7 @@ class ProgressionTimer {
     if (!this.running || !this.segments.length) return 0;
     const elapsed = (performance.now() - this.startTime) / 1000;
     const beatDur = 60 / this.bpm;
-    const totalSegBeats = this.segments.reduce((s, seg) => s + seg.beats, 0);
+    const totalSegBeats = this._totalSegBeats;
     const totalBeat = elapsed / beatDur;
     return (totalBeat % totalSegBeats) / totalSegBeats;
   }
@@ -1959,8 +1440,6 @@ class App {
     });
 
     const calCanvas = document.getElementById('calibrate-canvas');
-    // Draw-a-box for object registration (step 0), click for strum zones (steps 1-2)
-    this._calDrag = null; // { startX, startY } in normalized coords during drag
     calCanvas.addEventListener('mousedown', (e) => this._onCalMouseDown(e));
     calCanvas.addEventListener('mousemove', (e) => this._onCalMouseMove(e));
     calCanvas.addEventListener('mouseup', (e) => this._onCalMouseUp(e));
@@ -2052,10 +1531,14 @@ class App {
     // Skip calibration buttons (welcome overlay + calibrate overlay)
     document.getElementById('welcome-skip-cal')?.addEventListener('click', () => {
       this.keyboardMode = true;
+      this.tracker.stopCamera();
+      this.cameraAvailable = false;
       this.useDefaultCalibration();
     });
     document.getElementById('calibrate-skip').addEventListener('click', () => {
       this.keyboardMode = true;
+      this.tracker.stopCamera();
+      this.cameraAvailable = false;
       this.useDefaultCalibration();
       this.finishCalibration();
     });
@@ -2779,9 +2262,8 @@ class App {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    this.calibrateStep = this.tracker.registered ? 1 : 0;
-    document.getElementById('calibrate-hint').textContent =
-      this.tracker.registered ? 'Click the TOP of your strum area' : 'Draw a box around your object';
+    this.calibrateStep = 1;
+    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
     document.getElementById('calibrate-reset').style.display = 'none';
   }
 
@@ -2968,18 +2450,11 @@ class App {
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     this.calibrating = true;
-    this.calibrateStep = 0;
+    this.calibrateStep = 1;
     this._calTrackingRAF = null;
 
-    if (this.tracker.registered) {
-      // Object already registered — skip to strum zone calibration
-      this.calibrateStep = 1;
-      document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
-      this._startCalTrackingLoop();
-    } else {
-      document.getElementById('calibrate-hint').innerHTML =
-        '<strong>Draw a box</strong> around your object';
-    }
+    document.getElementById('calibrate-hint').textContent = 'Click the TOP of your strum area';
+    this._startCalTrackingLoop();
   }
 
   /** Animate tracked object position on the calibration overlay. */
@@ -3029,110 +2504,14 @@ class App {
     drawLoop();
   }
 
-  _onCalMouseDown(e) {
-    if (!this.calibrating) return;
-    const canvas = document.getElementById('calibrate-canvas');
-    const rect = canvas.getBoundingClientRect();
-    const nx = (e.clientX - rect.left) / rect.width;
-    const ny = (e.clientY - rect.top) / rect.height;
-
-    if (this.calibrateStep === 0) {
-      // Start drawing a selection box
-      this._calDrag = { startX: nx, startY: ny, curX: nx, curY: ny };
-    }
-  }
-
-  _onCalMouseMove(e) {
-    if (!this.calibrating || this.calibrateStep !== 0 || !this._calDrag) return;
-    const canvas = document.getElementById('calibrate-canvas');
-    const rect = canvas.getBoundingClientRect();
-    this._calDrag.curX = (e.clientX - rect.left) / rect.width;
-    this._calDrag.curY = (e.clientY - rect.top) / rect.height;
-
-    // Draw the selection rectangle
-    const dpr = window.devicePixelRatio || 1;
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
-
-    const d = this._calDrag;
-    const x = Math.min(d.startX, d.curX) * rect.width;
-    const y = Math.min(d.startY, d.curY) * rect.height;
-    const w = Math.abs(d.curX - d.startX) * rect.width;
-    const h = Math.abs(d.curY - d.startY) * rect.height;
-
-    // Dim area outside the selection
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.clearRect(x, y, w, h);
-
-    // Draw selection border
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.9)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(x, y, w, h);
-    ctx.setLineDash([]);
-
-    // Corner handles
-    const hs = 5;
-    ctx.fillStyle = '#00d4ff';
-    for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
-      ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2);
-    }
-  }
+  _onCalMouseDown() { }
+  _onCalMouseMove() { }
 
   _onCalMouseUp(e) {
     if (!this.calibrating) return;
     const canvas = document.getElementById('calibrate-canvas');
     const rect = canvas.getBoundingClientRect();
-    const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-
-    // Step 0: Finish drawing selection box → register object
-    if (this.calibrateStep === 0) {
-      if (!this._calDrag) return;
-      const d = this._calDrag;
-      this._calDrag = null;
-
-      const x0 = Math.min(d.startX, nx), y0 = Math.min(d.startY, ny);
-      const x1 = Math.max(d.startX, nx), y1 = Math.max(d.startY, ny);
-      const boxW = x1 - x0, boxH = y1 - y0;
-
-      // If the box is too small, treat as a click (backwards compat)
-      if (boxW < 0.02 || boxH < 0.02) {
-        const calVideo = document.getElementById('calibrate-video');
-        const hsv = this.tracker.registerFromVideo(calVideo, nx, ny);
-        if (!hsv) {
-          document.getElementById('calibrate-hint').textContent =
-            'Could not read color — draw a box around your object';
-          return;
-        }
-      } else {
-        // Register from the drawn rectangle
-        const calVideo = document.getElementById('calibrate-video');
-        const hsv = this.tracker.registerFromRegion(calVideo, x0, y0, x1, y1);
-        if (!hsv) {
-          document.getElementById('calibrate-hint').textContent =
-            'Could not read object — try drawing a tighter box';
-          return;
-        }
-      }
-
-      const color = this.tracker.getRegisteredColorCSS();
-      const warning = this.tracker.getTrackingWarning();
-      const swatch = `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span>`;
-      let hintHTML = `Tracking ${swatch} — now click the <strong>TOP</strong> of your strum area`;
-      if (warning) {
-        hintHTML += `<br><span style="color:#FFD740;font-size:12px;font-weight:400">${warning}</span>`;
-      }
-      document.getElementById('calibrate-hint').innerHTML = hintHTML;
-      this.calibrateStep = 1;
-      document.getElementById('calibrate-reset').style.display = '';
-      this._calTopPxY = null;
-      this._startCalTrackingLoop();
-      return;
-    }
-
     const dpr = window.devicePixelRatio || 1;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3142,9 +2521,8 @@ class App {
     if (this.calibrateStep === 1) {
       this.strumCamTop = ny;
       this._calTopPxY = pxY;
-      const color = this.tracker.getRegisteredColorCSS();
       document.getElementById('calibrate-hint').innerHTML =
-        `Tracking <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${color};vertical-align:middle;border:2px solid #fff"></span> — now click the <strong>BOTTOM</strong> of your strum area`;
+        'Now click the <strong>BOTTOM</strong> of your strum area';
       this.calibrateStep = 2;
       return;
     }
@@ -3298,12 +2676,17 @@ class App {
     const delta = curr - prev;
     const speed = Math.abs(delta);
 
-    const isDownStrum = delta > 0.5;
+    // Normalize threshold to string spacing so sensitivity is display-independent
+    const stringSpacing = (L.stringYs[5] - L.stringYs[0]) / 5;
+    const strumThreshold = stringSpacing * 0.08;
+
+    const isDownStrum = delta > strumThreshold;
     const inBothZone = this.handState.x >= (L.bodyLeft + L.bodyRight) / 2;
-    const isUpStrum = inBothZone && delta < -0.5;
+    const isUpStrum = inBothZone && delta < -strumThreshold;
 
     if (isDownStrum || isUpStrum) {
-      const vel = Math.min(1, Math.max(0.25, speed / 10));
+      // Map hand speed to velocity — faster strums play louder
+      const vel = Math.min(1, Math.max(0.3, speed / (stringSpacing * 0.5)));
       const now = performance.now();
       const COOLDOWN = 80;
 
