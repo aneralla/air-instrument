@@ -219,27 +219,6 @@ class GuitarAudio {
     osc.stop(this.ctx.currentTime + 0.04);
   }
 
-  playChuck(isDown = true) {
-    if (!this.ctx) return;
-    const bufLen = Math.floor(this.ctx.sampleRate * 0.035);
-    const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) {
-      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.006));
-    }
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = isDown ? 800 : 1200;
-    filter.Q.value = 2;
-    const g = this.ctx.createGain();
-    g.gain.value = isDown ? 0.10 : 0.07;
-    src.connect(filter);
-    filter.connect(g);
-    g.connect(this.ctx.destination);
-    src.start(this.ctx.currentTime);
-  }
 }
 
 // ── Hand tracker (MediaPipe) ────────────────────────────────
@@ -1891,10 +1870,6 @@ class App {
     this.activePatternName = 'pop';
     this.hasExplicitPattern = true;
 
-    this.metronomeOn = true;
-    this.lastMetronomeBeat = -1;
-    this._lastGuideSlot = -1;
-
     this.score = 0;
     this.streak = 0;
     this.bestStreak = 0;
@@ -1975,10 +1950,6 @@ class App {
     const calBtn = document.getElementById('calibrate-btn');
     calBtn.addEventListener('click', () => this.startCalibration());
     document.getElementById('tone-btn').addEventListener('click', () => this.cycleTone());
-    document.getElementById('metronome-btn').addEventListener('click', () => {
-      this.metronomeOn = !this.metronomeOn;
-      document.getElementById('metronome-btn').classList.toggle('active', this.metronomeOn);
-    });
     document.getElementById('loop-btn').addEventListener('click', () => {
       this.loopMode = !this.loopMode;
       document.getElementById('loop-btn').classList.toggle('active', this.loopMode);
@@ -2874,7 +2845,7 @@ class App {
       this.playing = false;
       this.countingIn = false;
       this.timer.stop();
-      this.lastMetronomeBeat = -1;
+
       btn.textContent = 'Play';
       btn.classList.remove('active');
       if (this.autoMode) this.toggleAuto();
@@ -2896,7 +2867,7 @@ class App {
       this.playing = true;
       this.audio.start();
       this.resetScore();
-      this.lastMetronomeBeat = -1;
+
       this.startCountIn();
       btn.textContent = 'Stop';
       btn.classList.add('active');
@@ -3409,7 +3380,6 @@ class App {
       const idx = this.timer.idx;
       if (idx !== this.lastTimerIdx) {
         this.lastTimerIdx = idx;
-        this._lastGuideSlot = -1;
         const ch = this.timer.currentChord();
         if (ch) {
           this.setChord(ch.chord);
@@ -3419,21 +3389,6 @@ class App {
         this.updateLyrics();
       }
       this.updateBeatDots(this.timer.currentBeat(), this.timer.currentBeatsTotal());
-
-      if (this.metronomeOn) {
-        const pat = STRUM_PATTERNS[this.activePatternName];
-        if (pat) {
-          const patternBeats = pat.slots.length / 2;
-          const moduloBeat = this.timer.beatInChord % patternBeats;
-          const currentSlot = Math.floor(moduloBeat * 2);
-          if (currentSlot !== this._lastGuideSlot) {
-            this._lastGuideSlot = currentSlot;
-            const slot = pat.slots[currentSlot % pat.slots.length];
-            if (slot === 'D') this.audio.playChuck(true);
-            else if (slot === 'U') this.audio.playChuck(false);
-          }
-        }
-      }
 
       if (this.autoMode) {
         this.autoPlayer.check(this.timer.beatInChord, this.timer.idx);
