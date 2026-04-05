@@ -913,6 +913,17 @@ body {
   transition: color 0.15s, border-color 0.15s;
 }
 .calibrate-skip-btn:hover { color: #fff; border-color: var(--accent); }
+.calibrate-skip-btn kbd {
+  display: inline-block;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 11px;
+  min-width: 16px;
+  text-align: center;
+}
 
 /* Calibrate reset button */
 .calibrate-reset-btn {
