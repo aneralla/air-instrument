@@ -2088,13 +2088,14 @@ class App {
       this.resetCalibration();
     });
 
-    // Keyboard strum: spacebar = down strum, shift+space = up strum
+    // Keyboard strum: J = down, K = up (adjacent keys), Space = down
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (e.code === 'Space' && !e.repeat) {
-        e.preventDefault();
-        if (!this.playing || !this.currentBuffers) return;
-        const dir = e.shiftKey ? 'up' : 'down';
+      if (e.repeat) return;
+      let dir = null;
+      if (e.code === 'Space' || e.code === 'KeyJ') { e.preventDefault(); dir = 'down'; }
+      else if (e.code === 'KeyK') { dir = 'up'; }
+      if (dir && this.playing && this.currentBuffers) {
         this.triggerAutoStrum(dir);
         this.judgeStrum();
       }
@@ -2499,7 +2500,7 @@ class App {
         if (calLink) calLink.style.display = 'none';
         if (skipLink) skipLink.style.display = 'none';
         const stepText = step1.querySelector('.welcome-step-text');
-        if (stepText) stepText.innerHTML = 'No camera needed<br><span class="welcome-kb-hint">Use <kbd>Space</kbd> or click to strum</span>';
+        if (stepText) stepText.innerHTML = 'No camera needed<br><span class="welcome-kb-hint">Use <kbd>J</kbd> ↓ <kbd>K</kbd> ↑ to strum</span>';
       } else {
         step1.classList.toggle('done', this.calibrated);
         if (this.calibrated) {
