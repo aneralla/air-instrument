@@ -242,6 +242,54 @@ class GuitarAudio {
   }
 }
 
+// ── Hand tracker (MediaPipe) ────────────────────────────────
+
+class HandTracker {
+  constructor(video) {
+    this.video = video;
+    this.landmarker = null;
+    this.registered = true; // always "registered" — no object registration needed
+  }
+
+  async init() {
+    const v = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
+    );
+    const fs = await v.FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+    );
+    this.landmarker = await v.HandLandmarker.createFromOptions(fs, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
+        delegate: 'GPU',
+      },
+      runningMode: 'VIDEO',
+      numHands: 1,
+    });
+  }
+
+  async startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+    });
+    this.video.srcObject = stream;
+    await new Promise((r) => { this.video.onloadeddata = r; });
+  }
+
+  detect() {
+    if (!this.landmarker || !this.video.videoWidth) return null;
+    const res = this.landmarker.detectForVideo(this.video, performance.now());
+    if (!res.landmarks || !res.landmarks.length) return null;
+    const tip = res.landmarks[0][8];
+    return { x: tip.x, y: tip.y };
+  }
+
+  // Compatibility stubs so the calibration code doesn't break
+  getRegisteredColorCSS() { return '#00d4ff'; }
+  getTrackingWarning() { return null; }
+}
+
 // ── RGB → HSV ──────────────────────────────────────────────
 
 function rgbToHsv(r, g, b) {
@@ -1868,7 +1916,7 @@ class App {
 
   async init() {
     const video = document.getElementById('camera');
-    this.tracker = new ObjectTracker(video);
+    this.tracker = new HandTracker(video);
 
     const imgPromise = new Promise((resolve, reject) => {
       const img = new Image();
@@ -2745,21 +2793,15 @@ class App {
       this._calTrackingRAF = null;
     }
     this._calTopPxY = null;
-    this.tracker.registered = false;
-    this.tracker.targetHSV = null;
-    this.tracker.lastPos = null;
-    this.tracker.lostFrames = 0;
-    this.tracker.template = null;
-    this.tracker.refBlobSize = 0;
     const canvas = document.getElementById('calibrate-canvas');
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    this.calibrateStep = 0;
-    document.getElementById('calibrate-hint').innerHTML =
-      '<strong>Draw a box</strong> around your object';
+    this.calibrateStep = this.tracker.registered ? 1 : 0;
+    document.getElementById('calibrate-hint').textContent =
+      this.tracker.registered ? 'Click the TOP of your strum area' : 'Draw a box around your object';
     document.getElementById('calibrate-reset').style.display = 'none';
   }
 
