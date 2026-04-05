@@ -1211,6 +1211,19 @@ body {
   letter-spacing: 0.3px;
 }
 
+.pattern-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--accent);
+  background: rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
 /* Welcome action buttons */
 .welcome-actions {
   display: flex;
@@ -1250,6 +1263,17 @@ body {
   background: rgba(0, 255, 136, 0.12);
   color: var(--green);
   border: 1px solid rgba(0, 255, 136, 0.25);
+  letter-spacing: 0.3px;
+}
+
+.welcome-pattern-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 12px;
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(0, 212, 255, 0.25);
   letter-spacing: 0.3px;
 }
 

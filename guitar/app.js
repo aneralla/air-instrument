@@ -1933,6 +1933,12 @@ class App {
         }
       }
 
+      // Show pattern badge for songs with custom strum patterns
+      const patBadgeEl = document.getElementById('welcome-pattern-badge');
+      if (patBadgeEl) {
+        patBadgeEl.classList.toggle('hidden', !this.currentSong.pattern);
+      }
+
       // Update difficulty badge
       const diffEl = document.getElementById('welcome-difficulty');
       if (diffEl) {
@@ -2018,14 +2024,17 @@ class App {
       if (!searchWrap.classList.contains('hidden')) {
         searchInput.value = '';
         searchInput.focus();
-        this.showWelcomeResults(this.songs.slice(0, 8), results);
+        // Show songs with custom patterns first
+        const sorted = [...this.songs].sort((a, b) => (b.pattern ? 1 : 0) - (a.pattern ? 1 : 0));
+        this.showWelcomeResults(sorted.slice(0, 8), results);
       }
     });
 
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.trim();
       if (!q) {
-        this.showWelcomeResults(this.songs.slice(0, 8), results);
+        const sorted = [...this.songs].sort((a, b) => (b.pattern ? 1 : 0) - (a.pattern ? 1 : 0));
+        this.showWelcomeResults(sorted.slice(0, 8), results);
         return;
       }
       const lower = q.toLowerCase();
@@ -2066,7 +2075,10 @@ class App {
 
     searchInput.addEventListener('focus', () => {
       const q = searchInput.value.trim();
-      if (!q) this.showWelcomeResults(this.songs.slice(0, 8), results);
+      if (!q) {
+        const sorted = [...this.songs].sort((a, b) => (b.pattern ? 1 : 0) - (a.pattern ? 1 : 0));
+        this.showWelcomeResults(sorted.slice(0, 8), results);
+      }
     });
   }
 
@@ -2076,7 +2088,8 @@ class App {
       const div = document.createElement('div');
       div.className = 'welcome-search-result';
       const diff = songDifficulty(item);
-      div.innerHTML = `<span>${item.title}</span><span class="song-meta"><span class="diff-badge" style="background:${diff.color}">${diff.label}</span><span class="song-artist">${item.artist}</span><button class="demo-pattern-btn" title="Demo this song's pattern">&#9654; Pattern</button></span>`;
+      const patBadge = item.pattern ? '<span class="pattern-badge">Strum pattern</span>' : '';
+      div.innerHTML = `<span>${item.title}</span><span class="song-meta">${patBadge}<span class="diff-badge" style="background:${diff.color}">${diff.label}</span><span class="song-artist">${item.artist}</span><button class="demo-pattern-btn" title="Demo this song's pattern">&#9654; Pattern</button></span>`;
       // Click song name to select
       div.addEventListener('click', (e) => {
         if (e.target.closest('.demo-pattern-btn')) return;
